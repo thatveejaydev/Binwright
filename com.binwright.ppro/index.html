@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Binwright</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <!-- Nav Tabs (At Very Top) -->
+    <nav class="nav-tabs">
+        <button class="nav-tab active" data-tab="tab-sort">Sort</button>
+        <button class="nav-tab" data-tab="tab-layout">Layout</button>
+        <button class="nav-tab" data-tab="tab-media">Media</button>
+    </nav>
+
+    <!-- App Header (Plugin Name & Project Pill Below Tabs) -->
+    <header class="app-header">
+        <div class="brand">
+            <span class="brand-title">Binwright</span>
+            <div class="project-pill-wrap">
+                <span class="project-pill-name" id="projectPill" title="Active Project">Main.prproj</span>
+                <button class="settings-btn" id="refreshBtn" title="Rescan Project">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                        <path d="M3 3v5h5"/>
+                        <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+                        <path d="M16 21h5v-5"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- TAB 1: SORT -->
+    <main class="tab-content active" id="tab-sort">
+        <!-- Folder Layout Section -->
+        <div class="sort-section">
+            <div class="sort-section-title">Sort Project</div>
+            <div class="custom-type-select-wrap" id="sortPresetWrap">
+                <button type="button" class="custom-type-trigger sort-preset-trigger" id="sortPresetTrigger" aria-haspopup="listbox" aria-expanded="false">
+                    <div class="custom-type-trigger-left">
+                        <span class="custom-type-trigger-icon" id="sortPresetTriggerIcon">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="3" width="7" height="7"></rect>
+                                <rect x="14" y="3" width="7" height="7"></rect>
+                                <rect x="14" y="14" width="7" height="7"></rect>
+                                <rect x="3" y="14" width="7" height="7"></rect>
+                            </svg>
+                        </span>
+                        <span class="custom-type-trigger-title" id="sortPresetTriggerTitle">Default Clean</span>
+                    </div>
+                    <div class="sort-trigger-right">
+                        <span class="sort-preset-badge" id="sortPresetBadge">6 Bins Configured</span>
+                        <span class="custom-type-trigger-chevron">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="6 9 12 15 18 9"/>
+                            </svg>
+                        </span>
+                    </div>
+                </button>
+                <div class="custom-type-menu" id="sortPresetMenu" role="listbox">
+                    <!-- Populated dynamically -->
+                </div>
+                <select id="sortPresetSelect" style="display: none;"></select>
+            </div>
+
+            <!-- Project Status Banner -->
+            <div class="sort-status-banner" id="sortStatusBanner">
+                <div class="sort-status-left">
+                    <span class="sort-status-dot" id="sortStatusDot"></span>
+                    <span class="sort-status-text" id="sortStatusText">Scanning project...</span>
+                </div>
+                <button type="button" class="sort-status-refresh" id="btnRefreshProjectStatus" title="Rescan project">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                        <path d="M3 3v5h5"/>
+                        <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+                        <path d="M16 21h5v-5"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- Primary Sort / Hero Section -->
+        <div class="sort-section">
+            <div class="sort-hero-group">
+                <button class="sort-btn sort-btn-hero" id="btnSortByType">
+                    <svg class="sort-btn-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="4" y1="6" x2="14" y2="6"></line>
+                        <line x1="4" y1="12" x2="11" y2="12"></line>
+                        <line x1="4" y1="18" x2="8" y2="18"></line>
+                        <polyline points="15 15 18 18 21 15"></polyline>
+                        <line x1="18" y1="9" x2="18" y2="18"></line>
+                    </svg>
+                    <span id="sortActionLabel">Review &amp; Sort items</span>
+                </button>
+                <div class="sort-reassurance">
+                    Moves items between project bins. Media stays on disk.
+                </div>
+            </div>
+        </div>
+
+        <div class="sort-divider"></div>
+
+        <!-- Bin Tools Section -->
+        <div class="sort-section">
+            <div class="sort-section-title">Bin Tools</div>
+            <div class="sort-tools-grid">
+                <button class="sort-btn sort-btn-tool" id="btnCreateBins" title="Create empty bin hierarchy from layout">
+                    <svg class="sort-btn-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                        <line x1="12" y1="11" x2="12" y2="17"></line>
+                        <line x1="9" y1="14" x2="15" y2="14"></line>
+                    </svg>
+                    <span>Create Empty Bins</span>
+                </button>
+                <button class="sort-btn sort-btn-tool" id="btnFlattenBins" title="Delete empty bins in project">
+                    <svg class="sort-btn-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="3 6 5 6 21 6"></polyline>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        <line x1="10" y1="11" x2="10" y2="17"></line>
+                        <line x1="14" y1="11" x2="14" y2="17"></line>
+                    </svg>
+                    <span>Flatten Empty Bins</span>
+                </button>
+            </div>
+            <button class="sort-btn sort-btn-danger" id="btnDeleteAllBins" title="Move all files to root and delete all bins">
+                <svg class="sort-btn-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                    <line x1="9.5" y1="11.5" x2="14.5" y2="16.5"></line>
+                    <line x1="14.5" y1="11.5" x2="9.5" y2="16.5"></line>
+                </svg>
+                <span>Delete All Bins (Move to Root)</span>
+            </button>
+        </div>
+
+        <div class="sort-divider"></div>
+
+        <!-- Automatic Section -->
+        <div class="sort-section">
+            <div class="sort-section-title">Automatic</div>
+            <div class="sort-auto-card">
+                <div class="sort-auto-info">
+                    <span class="sort-auto-text">Auto-sort new imports</span>
+                    <span class="sort-auto-subtext">Automatically routes newly imported clips into bins</span>
+                </div>
+                <label class="sort-switch" for="chkAutoSort">
+                    <input type="checkbox" id="chkAutoSort">
+                    <span class="sort-switch-slider"></span>
+                </label>
+            </div>
+        </div>
+    </main>
+
+    <!-- TAB 2: LAYOUT -->
+    <main class="tab-content" id="tab-layout">
+        <div class="form-group">
+            <div class="section-label">FOLDER LAYOUT</div>
+            <div class="preset-toolbar">
+                <div class="custom-type-select-wrap" id="layoutPresetWrap" style="flex: 1; min-width: 0;">
+                    <button type="button" class="custom-type-trigger" id="layoutPresetTrigger" aria-haspopup="listbox" aria-expanded="false" style="height: 32px;">
+                        <div class="custom-type-trigger-left">
+                            <span class="custom-type-trigger-icon" id="layoutPresetTriggerIcon">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <rect x="3" y="3" width="7" height="7"></rect>
+                                    <rect x="14" y="3" width="7" height="7"></rect>
+                                    <rect x="14" y="14" width="7" height="7"></rect>
+                                    <rect x="3" y="14" width="7" height="7"></rect>
+                                </svg>
+                            </span>
+                            <span class="custom-type-trigger-title" id="layoutPresetTriggerTitle">Default Clean</span>
+                        </div>
+                        <span class="custom-type-trigger-chevron">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="6 9 12 15 18 9"/>
+                            </svg>
+                        </span>
+                    </button>
+                    <div class="custom-type-menu" id="layoutPresetMenu" role="listbox">
+                        <!-- Populated dynamically -->
+                    </div>
+                    <select id="layoutPresetSelect" style="display: none;"></select>
+                </div>
+                <button class="icon-btn" id="btnRenamePreset" title="Rename Folder Layout">✎</button>
+                <button class="icon-btn" id="btnNewPreset" title="Create New Layout">+</button>
+                <button class="icon-btn" id="btnDuplicatePreset" title="Duplicate Layout">❐</button>
+                <button class="icon-btn" id="btnExportPreset" title="Export Layout Preset (JSON)">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="17 8 12 3 7 8"/>
+                        <line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                </button>
+                <button class="icon-btn" id="btnImportPreset" title="Import Layout Preset (JSON)">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                </button>
+                <button class="icon-btn" id="btnDeletePreset" title="Delete Layout">✕</button>
+                <input type="file" id="presetFileInput" accept=".json" style="display: none;">
+            </div>
+        </div>
+
+        <div class="section-label">FOLDERS • HIGHEST PRIORITY RULE WINS</div>
+        <div class="rule-list" id="ruleList">
+            <!-- Dynamic Rules Rendered by JS -->
+        </div>
+
+        <p id="builtinLayoutHint" hidden>Default is a built-in layout. Duplicate it to make changes.</p>
+        <button class="btn btn-secondary" id="btnAddRule" style="margin-top: 12px;">+ Add Folder Rule</button>
+    </main>
+
+    <!-- TAB 3: FILES -->
+    <main class="tab-content" id="tab-media">
+        <section class="files-card" aria-labelledby="filesSelectTitle">
+            <h3 id="filesSelectTitle">1. Project Assets &amp; Health</h3>
+            <div class="files-health" id="fileStatsBanner">
+                <div class="files-health-status">
+                    <span id="statsLooseSummary" aria-live="polite">Scanning files…</span>
+                    <span id="statsSummary" hidden></span>
+                </div>
+                <div class="files-health-actions">
+                    <button type="button" id="btnRescanFiles"><span aria-hidden="true">⟳</span> Rescan</button>
+                    <button type="button" id="trustedFoldersToggle" aria-expanded="false" aria-controls="trustedFoldersPanel"><span aria-hidden="true">⚙</span> <span id="trustedFoldersLabel">Trusted Folders (0)</span></button>
+                </div>
+            </div>
+            <div class="files-trusted-panel" id="trustedFoldersPanel" hidden>
+                <ul id="trustedFolderList"></ul>
+                <button type="button" class="btn btn-secondary btn-sm" id="btnAddTrustedFolder">Browse to add folder</button>
+            </div>
+            <div class="tree-toolbar">
+                <div class="tree-toggle">
+                    <button type="button" class="tree-toggle-btn active" id="btnViewByDisk">By Folder</button>
+                    <button type="button" class="tree-toggle-btn" id="btnViewByBin">By Bin</button>
+                </div>
+                <div class="files-selection-actions">
+                    <button type="button" class="btn btn-primary btn-sm" id="btnSelectLoose">Select Outside</button>
+                    <button type="button" id="btnClearSelection">Clear</button>
+                </div>
+            </div>
+            <div class="files-table">
+                <div class="files-table-heading"><input type="checkbox" id="filesSelectAll" aria-label="Select all files"><span>Name</span><span>Status</span><span>Size</span></div>
+                <div class="tree-container" id="fileTreeContainer"></div>
+                <div class="files-selection-bar"><span id="filesSelectionSummary" aria-live="polite">0 files selected</span></div>
+            </div>
+        </section>
+        <section class="files-card" aria-labelledby="filesRelinkTitle">
+            <h3 id="filesRelinkTitle">2. Collect &amp; Relink <span id="filesRelinkCount"></span></h3>
+            <label class="files-destination-label" for="relocateDestInput">Destination Folder</label>
+            <div class="browse-row">
+                <input type="text" id="relocateDestInput" placeholder="D:/Project Media">
+                <button type="button" class="btn btn-secondary btn-sm" id="btnBrowseRelocate">Browse…</button>
+            </div>
+            <div class="files-destination-options">
+                <label class="files-layout-option"><input type="checkbox" id="chkMirrorLayout"> Mirror bin folder structure</label>
+                <div class="files-mode-toggle" role="group" aria-label="Transfer mode" aria-describedby="relocateModeHint">
+                    <label><input type="radio" name="relocateMode" value="copy" checked><span>Copy &amp; Relink</span></label>
+                    <label><input type="radio" name="relocateMode" value="move"><span>Move &amp; Relink</span></label>
+                </div>
+            </div>
+            <div id="relocateModeHint" class="files-mode-hint" hidden></div>
+            <div class="files-action-footer"><button type="button" class="btn btn-primary" id="btnRelocateFiles" disabled>Copy &amp; Relink</button></div>
+            <div class="progress-bar-wrap" id="relocateProgressWrap">
+                <div class="progress-bar-fill" id="relocateProgressFill"></div>
+            </div>
+        </section>
+    </main>
+
+
+
+    <!-- Modal Drawer: Preview Sort -->
+    <div class="modal-overlay" id="previewModal">
+        <div class="modal-drawer preview-modal-drawer">
+            <div class="preview-modal-header">
+                <div>
+                    <div class="preview-title-row">
+                        <span class="preview-modal-title" id="previewTitle">Review Sort</span>
+                        <span class="preview-count-badge" id="previewCountBadge">0</span>
+                    </div>
+                    <div class="preview-subtitle-row" id="previewSubtitleRow">
+                        <span class="preview-info-dot" id="previewSubtitleIcon">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <line x1="12" y1="16" x2="12" y2="12"></line>
+                                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                            </svg>
+                        </span>
+                        <span class="preview-modal-subtitle" id="previewSubtitle">Review where each item will go</span>
+                    </div>
+                </div>
+                <button type="button" class="preview-modal-close" id="btnClosePreview" title="Close">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06z"/>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="preview-filter-bar" id="previewFilterBar">
+                <!-- Dynamically populated filter pills -->
+            </div>
+
+            <div class="preview-modal-list" id="previewList">
+                <!-- Dynamic grouped moves list -->
+            </div>
+
+            <div class="preview-footer">
+                <div class="preview-reassurance">Files will be organized in bins · Disk files remain in place</div>
+                <div class="preview-footer-actions">
+                    <button type="button" class="btn btn-secondary" id="btnCancelPreview">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="btnConfirmSort">Sort items</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Drawer: Add Folder Rule -->
+    <div class="modal-overlay" id="addRuleModal">
+        <div class="modal-drawer rule-modal-drawer">
+            <!-- Header -->
+            <div class="rule-modal-header">
+                <div class="rule-modal-header-left">
+                    <div class="rule-modal-icon">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/>
+                            <line x1="12" y1="10" x2="12" y2="16"/>
+                            <line x1="9" y1="13" x2="15" y2="13"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <div class="rule-modal-title">Add Folder Rule</div>
+                        <div class="rule-modal-subtitle">Create a bin and define what goes in it</div>
+                    </div>
+                </div>
+                <button type="button" class="rule-modal-close" id="btnCloseRuleModal" title="Close">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06z"/>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="rule-modal-divider"></div>
+
+            <!-- Step 1: Folder Setup -->
+            <div class="rule-step-header">
+                <span class="rule-step-num">1</span>
+                <span class="rule-step-title">Folder Setup</span>
+            </div>
+
+            <div class="rule-two-col">
+                <div class="rule-field-group">
+                    <label class="rule-field-label" for="newRuleName">Name</label>
+                    <div class="rule-input-wrap">
+                        <input type="text" id="newRuleName" class="rule-text-input" placeholder="e.g. Memes, SFX, Raw" autocomplete="off">
+                    </div>
+                </div>
+                <div class="rule-field-group">
+                    <label class="rule-field-label" for="newRuleParent">Parent Bin</label>
+                    <div class="custom-type-select-wrap" id="customParentWrap">
+                        <button type="button" class="custom-type-trigger" id="customParentTrigger" aria-haspopup="listbox" aria-expanded="false">
+                            <div class="custom-type-trigger-left">
+                                <span class="custom-type-trigger-icon" id="customParentTriggerIcon">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/>
+                                    </svg>
+                                </span>
+                                <span class="custom-type-trigger-title" id="customParentTriggerTitle">Top Level (None)</span>
+                            </div>
+                            <span class="custom-type-trigger-chevron">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="6 9 12 15 18 9"/>
+                                </svg>
+                            </span>
+                        </button>
+                        
+                        <div class="custom-type-menu custom-parent-menu" id="customParentMenu" role="listbox">
+                            <!-- Populated dynamically from preset folders -->
+                        </div>
+
+                        <select id="newRuleParent" style="display: none;">
+                            <option value="">Top Level (None)</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="rule-modal-divider"></div>
+
+            <!-- Step 2: Matching Rule -->
+            <div class="rule-step-header">
+                <span class="rule-step-num">2</span>
+                <span class="rule-step-title">Matching Rule</span>
+            </div>
+            <div class="rule-step-desc">Add files to this folder that:</div>
+
+            <div class="rule-two-col">
+                <div class="custom-type-select-wrap" id="customTypeWrap">
+                    <button type="button" class="custom-type-trigger" id="customTypeTrigger" aria-haspopup="listbox" aria-expanded="false">
+                        <div class="custom-type-trigger-left">
+                            <span class="custom-type-trigger-icon" id="customTypeTriggerIcon">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/>
+                                    <line x1="7" y1="2" x2="7" y2="22"/>
+                                    <line x1="17" y1="2" x2="17" y2="22"/>
+                                    <line x1="2" y1="12" x2="22" y2="12"/>
+                                    <line x1="2" y1="7" x2="7" y2="7"/>
+                                    <line x1="2" y1="17" x2="7" y2="17"/>
+                                    <line x1="17" y1="17" x2="22" y2="17"/>
+                                    <line x1="17" y1="7" x2="22" y2="7"/>
+                                </svg>
+                            </span>
+                            <span class="custom-type-trigger-title" id="customTypeTriggerTitle">Any File Type</span>
+                            <span class="custom-type-trigger-sub" id="customTypeTriggerSub"></span>
+                        </div>
+                        <span class="custom-type-trigger-chevron">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="6 9 12 15 18 9"/>
+                            </svg>
+                        </span>
+                    </button>
+                    
+                    <div class="custom-type-menu" id="customTypeMenu" role="listbox">
+                        <!-- Rendered by JS -->
+                    </div>
+
+                    <select id="newRuleType" style="display: none;">
+                        <option value="all">Any File Type</option>
+                        <option value="video">Video</option>
+                        <option value="audio">Audio</option>
+                        <option value="image">Graphics</option>
+                        <option value="sequence">Nests</option>
+                        <option value="cameraraw">Camera RAW</option>
+                        <option value="graphics">MOGRTs & Titles</option>
+                        <option value="captions">Captions & Subtitles</option>
+                        <option value="solids">Generated Media</option>
+                    </select>
+                </div>
+                <div class="rule-tag-segmented" id="filterSegmentedControl">
+                    <button type="button" class="rule-segment-btn active" id="btnFilterNone">No Filters</button>
+                    <button type="button" class="rule-segment-btn" id="btnFilterCustom">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px; flex-shrink: 0;">
+                            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+                        </svg>
+                        <span>With Filters</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="modal-filters-builder" id="modalFiltersBuilder" style="display: none; margin-top: 10px;">
+                <!-- Filename conditions builder rendered by JS -->
+            </div>
+
+            <div class="rule-modal-divider"></div>
+
+            <!-- Step 3: Options -->
+            <div class="rule-step-header">
+                <span class="rule-step-num">3</span>
+                <span class="rule-step-title">Options</span>
+            </div>
+
+            <label class="rule-checkbox-row">
+                <input type="checkbox" id="newRuleUntouchable" class="rule-custom-checkbox">
+                <span class="rule-checkbox-label">
+                    <strong class="rule-checkbox-title">Locked</strong>
+                    <span class="rule-checkbox-desc">Never file items in, move out, or delete.</span>
+                </span>
+            </label>
+
+            <!-- Footer Buttons -->
+            <div class="rule-modal-footer">
+                <button type="button" class="rule-btn-cancel" id="btnCancelRuleModal">Cancel</button>
+                <button type="button" class="rule-btn-save" id="btnSaveNewRule">Save Folder Rule</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Anchored Folder Matching Rule Popover -->
+    <div class="filter-popover" id="filterPopover" role="dialog" aria-label="Matching rule">
+        <div class="filter-popover-arrow" id="filterPopoverArrow"></div>
+        <div class="filter-popover-header">
+            <div class="filter-popover-header-left">
+                <span class="filter-popover-title">Matching rule</span>
+                <span class="filter-popover-bin" id="filterPopoverBinName"></span>
+            </div>
+            <button type="button" class="filter-popover-close" id="btnCloseFilterPopover" title="Close">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"/>
+                    <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            </button>
+        </div>
+
+        <div class="popover-media-type-row" id="popoverMediaTypeRow">
+            <span class="popover-field-label">Media type</span>
+            <button type="button" class="filter-mini-trigger popover-media-type-btn" id="popoverMediaTypeBtn" aria-haspopup="listbox" aria-expanded="false">
+                <span class="popover-media-type-icon" id="popoverMediaTypeIcon"></span>
+                <span class="popover-media-type-label" id="popoverMediaTypeLabel">Any File Type</span>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="6 9 12 15 18 9"/>
+                </svg>
+            </button>
+        </div>
+
+        <div id="cardFiltersBuilder">
+            <!-- Filename conditions builder rendered by JS -->
+        </div>
+
+        <div class="filter-popover-footer">
+            <button type="button" class="filter-btn-cancel" id="btnCancelFilterPopover">Cancel</button>
+            <button type="button" class="filter-btn-save" id="btnSaveFilterPopover">Save rule</button>
+        </div>
+    </div>
+
+    <!-- Shared Floating Menu for Filter Operator & Match Mode Dropdowns -->
+    <div class="custom-type-menu filter-floating-menu" id="filterFloatingMenu" role="listbox"></div>
+
+    <!-- Shared Floating Menu for Folder Rule More Options (Rename, Lock, Delete) -->
+    <div class="rule-more-floating-menu" id="ruleMoreMenu" role="menu"></div>
+
+    <!-- Toast Notification -->
+    <div class="toast" id="toast">Sorted 16 items.</div>
+
+    <!-- Hidden input for directory pickers -->
+    <input type="file" id="folderPicker" webkitdirectory directory style="display:none;">
+
+    <!-- Scripts -->
+    <script src="js/CSInterface.js"></script>
+    <script src="js/presets.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>
