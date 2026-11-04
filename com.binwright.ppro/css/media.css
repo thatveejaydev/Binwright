@@ -1,0 +1,130 @@
+/* File Tree in Files / Relocate Tab */
+
+
+.stats-warning {
+    color: var(--amber);
+    font-size: 10.5px;
+    font-weight: 600;
+    margin-top: 2px;
+}
+
+.tree-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.tree-toggle {
+    display: flex;
+    background: var(--bg-surface);
+    border-radius: 6px;
+    padding: 2px;
+    border: 1px solid var(--border-color);
+}
+
+.tree-toggle-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 10px;
+    font-weight: 600;
+    padding: 3px 9px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.tree-toggle-btn.active {
+    background: var(--accent-blue);
+    color: #ffffff;
+    font-weight: 700;
+}
+
+.tree-container {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    max-height: 200px;
+    overflow-y: auto;
+    padding: 6px 8px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    margin-bottom: 12px;
+}
+
+.tree-group {
+    margin-bottom: 6px;
+}
+
+.tree-group-hdr {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 3px 4px;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 4px;
+    font-weight: 700;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.tree-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 2.5px 6px 2.5px 16px;
+    border-radius: 3px;
+    color: var(--text-primary);
+}
+
+.tree-item:hover {
+    background: var(--bg-hover);
+}
+
+.tree-item-name {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tree-item-size {
+    color: var(--text-muted);
+    font-size: 9.5px;
+    flex-shrink: 0;
+}
+
+/* Relocate & Export Panels */
+
+.browse-row {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+
+.browse-row input {
+    flex: 1;
+}
+
+
+
+/* Progress bar */
+.progress-bar-wrap {
+    height: 4px;
+    background: var(--bg-surface);
+    border-radius: 2px;
+    overflow: hidden;
+    margin: 8px 0;
+    display: none;
+}
+
+.progress-bar-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--accent);
+    transition: width 0.2s;
+}
+
+/* Console Log Box */

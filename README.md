@@ -13,7 +13,7 @@ A Common Extensibility Platform (CEP) extension for **Adobe Premiere Pro** provi
   * Shows origin and target paths (e.g. `GX010233.MP4` $\rightarrow$ `02 Footage/MP4`).
   * Identifies loose files on disk and protects locked/untouchable bins.
 * **Create Bins**: Automatically creates the folder hierarchy in the project panel based on the active layout.
-* **Flatten Empty Bins**: Deletes unused, empty bins without touching protected or active layout folders.
+* **Remove Empty Bins**: Deletes unused, empty bins without touching protected or active layout folders.
 * **Auto-Sort New Imports**: Background watcher that automatically files new assets into their designated bins the moment they are imported into Premiere Pro.
 
 ### 2. `LAYOUT` Tab (Customizable Presets & Rules)
