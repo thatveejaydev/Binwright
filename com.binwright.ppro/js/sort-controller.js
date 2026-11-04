@@ -3,6 +3,16 @@
 
     Binwright.createSortController = function ({ state, elements, bridge, calculateMoves, escapeHtml, getItemIconSvg, scanProject, showToast, updatePresetUIState, renderLayoutRules, updateUIWithState }) {
         let skipReview = localStorage.getItem('binwright_skip_sort_review') === 'true';
+        let lastSortInverseMoves = null;
+
+        function clearUndoState() {
+            lastSortInverseMoves = null;
+            const timingStatus = document.getElementById('lastSortTiming');
+            if (timingStatus) {
+                timingStatus.hidden = true;
+                timingStatus.innerHTML = '';
+            }
+        }
 
         function updateSkipReviewButtonUI() {
             const btn = elements.btnToggleSkipReview || document.getElementById('btnToggleSkipReview');
@@ -310,14 +320,29 @@
             }
         }
 
-        function executeSort(moves) {
+        function executeSort(moves, isUndo = false) {
             const token = state.snapshotToken;
-            return runWithSortOverlay('Sorting project', async () => {
+            const inverseMoves = (moves || []).map(m => {
+                let prevPath = m.originPath || m.currentParentPath || "root";
+                if (prevPath === "Project root" || prevPath === "Project Root") prevPath = "root";
+                return {
+                    nodeId: m.nodeId,
+                    name: m.name,
+                    mediaPath: m.mediaPath || "",
+                    originPath: m.targetPath || "root",
+                    targetPath: prevPath,
+                    type: m.type
+                };
+            });
+
+            return runWithSortOverlay(isUndo ? 'Reverting sort' : 'Sorting project', async () => {
                 invalidateReview();
 
                 const timingStatus = document.getElementById('lastSortTiming');
-                timingStatus.hidden = true;
+                if (timingStatus) timingStatus.hidden = true;
                 let movedCount = 0;
+                let successfulInverseMoves = inverseMoves;
+
                 if (window.__adobe_cep__) {
                     const response = await new Promise(resolve => bridge.call('moveItemsToBins', resolve, {
                         moves,
@@ -338,12 +363,43 @@
                         refreshMs: Math.round(performance.now() - refreshStarted)
                     };
                     console.info('Binwright sort timing (ms)', timings);
-                    if (result.timings && timingStatus) {
-                        timingStatus.textContent = `Last sort · ${movedCount}/${moves.length} moved`;
-                        timingStatus.title = `Index: ${timings.indexMs}ms · Move: ${timings.moveMs}ms · Verify: ${timings.verifyMs}ms · Redraw: ${timings.redrawMs}ms · Refresh: ${timings.refreshMs}ms`;
-                        timingStatus.hidden = false;
+
+                    if (result.movedNodeIds && Array.isArray(result.movedNodeIds)) {
+                        const movedSet = new Set(result.movedNodeIds.map(String));
+                        successfulInverseMoves = inverseMoves.filter(m => movedSet.has(String(m.nodeId)));
+                    }
+
+                    if (timingStatus) {
+                        const timingTooltip = result.timings
+                            ? `Index: ${timings.indexMs}ms · Move: ${timings.moveMs}ms · Verify: ${timings.verifyMs}ms · Redraw: ${timings.redrawMs}ms · Refresh: ${timings.refreshMs}ms`
+                            : 'Sort completed';
+
+                        if (!isUndo && movedCount > 0) {
+                            timingStatus.innerHTML = `
+                                <span class="sort-timing-label" title="${escapeHtml(timingTooltip)}">Last sort · ${movedCount}/${moves.length} moved</span>
+                                <button type="button" class="sort-undo-btn" id="btnUndoSort" title="Revert last sort (restore ${movedCount} items to previous bins)">
+                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <path d="M3 7v6h6"></path>
+                                        <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"></path>
+                                    </svg>
+                                    <span>Undo</span>
+                                </button>
+                            `;
+                            timingStatus.hidden = false;
+                            const btnUndo = timingStatus.querySelector('#btnUndoSort');
+                            if (btnUndo) {
+                                btnUndo.addEventListener('click', (e) => {
+                                    e.stopPropagation();
+                                    undoSort();
+                                });
+                            }
+                        } else if (isUndo) {
+                            timingStatus.innerHTML = `<span class="sort-timing-label">Sort reverted · ${movedCount} item${movedCount === 1 ? '' : 's'} restored</span>`;
+                            timingStatus.hidden = false;
+                        }
                     }
                 } else {
+                    // Browser standalone preview fallback
                     moves.forEach(move => {
                         const item = state.items.find(candidate => candidate.nodeId === move.nodeId);
                         if (item) {
@@ -352,21 +408,63 @@
                         }
                     });
                     updateUIWithState();
+
                     if (timingStatus) {
-                        timingStatus.textContent = `Last sort · ${movedCount}/${moves.length} moved`;
-                        timingStatus.title = 'Simulated sort in browser';
-                        timingStatus.hidden = false;
+                        if (!isUndo && movedCount > 0) {
+                            timingStatus.innerHTML = `
+                                <span class="sort-timing-label" title="Simulated sort in browser">Last sort · ${movedCount}/${moves.length} moved</span>
+                                <button type="button" class="sort-undo-btn" id="btnUndoSort" title="Revert last sort (restore ${movedCount} items to previous bins)">
+                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <path d="M3 7v6h6"></path>
+                                        <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"></path>
+                                    </svg>
+                                    <span>Undo</span>
+                                </button>
+                            `;
+                            timingStatus.hidden = false;
+                            const btnUndo = timingStatus.querySelector('#btnUndoSort');
+                            if (btnUndo) {
+                                btnUndo.addEventListener('click', (e) => {
+                                    e.stopPropagation();
+                                    undoSort();
+                                });
+                            }
+                        } else if (isUndo) {
+                            timingStatus.innerHTML = `<span class="sort-timing-label">Sort reverted · ${movedCount} item${movedCount === 1 ? '' : 's'} restored</span>`;
+                            timingStatus.hidden = false;
+                        }
                     }
                 }
 
-                if (movedCount > 0) {
-                    showToast(`Sorted ${movedCount} item${movedCount === 1 ? '' : 's'}.`);
+                if (!isUndo) {
+                    if (movedCount > 0) {
+                        lastSortInverseMoves = successfulInverseMoves;
+                        showToast(`Sorted ${movedCount} item${movedCount === 1 ? '' : 's'}. (Ctrl+Z to undo)`);
+                    } else {
+                        lastSortInverseMoves = null;
+                        showToast("No items were moved.");
+                    }
                 } else {
-                    showToast("No items were moved.");
+                    lastSortInverseMoves = null;
+                    if (movedCount > 0) {
+                        showToast(`Reverted sort: restored ${movedCount} item${movedCount === 1 ? '' : 's'}.`);
+                    } else {
+                        showToast("Sort reverted.");
+                    }
                 }
             });
         }
 
+        function undoSort() {
+            if (state.sortInProgress || state.relocatingFiles) return;
+            if (!lastSortInverseMoves || lastSortInverseMoves.length === 0) {
+                showToast("No sort action to undo.");
+                return;
+            }
+            const movesToRevert = [...lastSortInverseMoves];
+            return executeSort(movesToRevert, true);
+        }
+
         // --- CREATE BINS & FLATTEN BINS ---
         function createBins() {
             const preset = window.presetManager.getActivePreset();
@@ -383,6 +481,7 @@
 
         function flattenEmptyBins() {
             return runWithSortOverlay('Removing empty bins', async () => {
+                clearUndoState();
                 const preset = window.presetManager.getActivePreset();
                 const protectedNames = preset.folders.map(f => f.name);
                 invalidateReview();
@@ -430,6 +529,7 @@
 
         async function deleteAllBins() {
             if (state.sortInProgress || state.relocatingFiles) return;
+            clearUndoState();
             const confirmMsg = "Are you sure you want to delete all bins?\n\nAll files and sequences will be safely moved to the root level.";
             const confirmed = await window.Binwright.dialog.confirm({
                 title: "Delete All Bins",
@@ -569,9 +669,26 @@
             elements.btnClosePreview.addEventListener('click', closePreviewModal);
             elements.btnCancelPreview.addEventListener('click', closePreviewModal);
             elements.btnConfirmSort.addEventListener('click', () => { if (reviewedMoves.length) executeSort(reviewedMoves); });
+
+            // Keyboard shortcut for Undo Sort (Ctrl+Z / Cmd+Z)
+            window.addEventListener('keydown', (e) => {
+                const isZ = (e.key === 'z' || e.key === 'Z');
+                const isMod = (e.ctrlKey || e.metaKey);
+                if (isMod && isZ && !e.shiftKey) {
+                    const tag = (document.activeElement && document.activeElement.tagName) || '';
+                    if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) return;
+                    if (document.activeElement && document.activeElement.isContentEditable) return;
+
+                    if (lastSortInverseMoves && lastSortInverseMoves.length > 0 && !state.sortInProgress) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        undoSort();
+                    }
+                }
+            });
         }
 
-        return { bindEvents, openPreviewModal, updateSortTabStatus, invalidateReview };
+        return { bindEvents, openPreviewModal, updateSortTabStatus, invalidateReview, undoSort, clearUndoState };
     };
 
     

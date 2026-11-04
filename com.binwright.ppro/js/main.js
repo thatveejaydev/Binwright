@@ -290,7 +290,10 @@
         }
         if (!itemsChanged) return;
 
-        if (projectChanged) state.selectedNodeIds.clear();
+        if (projectChanged) {
+            state.selectedNodeIds.clear();
+            if (sort && typeof sort.clearUndoState === 'function') sort.clearUndoState();
+        }
         else {
             const itemIds = new Set(items.map(item => item.nodeId));
             for (const id of state.selectedNodeIds) {

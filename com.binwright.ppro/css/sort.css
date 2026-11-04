@@ -386,21 +386,60 @@
 }
 
 .sort-timing-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+    padding: 3px 8px;
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
     font-size: 11px;
     color: var(--text-secondary, #a1a1aa);
-    margin-top: 6px;
-    font-family: inherit;
-    cursor: help;
-    display: inline-block;
-    padding: 2px 6px;
-    background: rgba(255, 255, 255, 0.04);
-    border-radius: 4px;
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    transition: all 0.15s ease;
 }
 
 .sort-timing-badge:hover {
+    border-color: rgba(255, 255, 255, 0.16);
+}
+
+.sort-timing-label {
+    color: var(--text-secondary, #a1a1aa);
+    cursor: help;
+}
+
+.sort-undo-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(59, 130, 246, 0.16);
+    border: 1px solid rgba(59, 130, 246, 0.4);
+    border-radius: 4px;
+    padding: 1px 7px;
+    color: #60a5fa;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    outline: none;
+    font-family: inherit;
+    line-height: 1.4;
+}
+
+.sort-undo-btn:hover {
+    background: rgba(59, 130, 246, 0.28);
+    border-color: #93c5fd;
     color: #ffffff;
-    border-color: rgba(255, 255, 255, 0.15);
+    box-shadow: 0 0 8px rgba(59, 130, 246, 0.3);
+}
+
+.sort-undo-btn:active {
+    transform: translateY(1px);
+}
+
+.sort-undo-btn svg {
+    display: inline-block;
+    flex-shrink: 0;
 }
 
 /* --- BIN UTILITIES SECTION --- */

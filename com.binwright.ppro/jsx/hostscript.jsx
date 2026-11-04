@@ -49,6 +49,8 @@ if (typeof JSON === "undefined") {
 
 (function() {
 
+    var BIN_TYPE = (typeof ProjectItemType !== 'undefined' && typeof ProjectItemType.BIN !== 'undefined') ? ProjectItemType.BIN : 2;
+
     var EXT_MAP = {
         // Camera RAW
         r3d: "cameraraw", braw: "cameraraw", ari: "cameraraw", arri: "cameraraw",
@@ -71,22 +73,23 @@ if (typeof JSON === "undefined") {
         scc: "captions", mcc: "captions", xml: "captions"
     };
 
-    function categorizeItem(isSeq, isBin, mediaPath) {
-        if (isBin) return "bin";
-        if (isSeq) return "sequence";
+    function categorizeMediaPath(mediaPath) {
         if (!mediaPath) return "solids";
-
         var lastDot = mediaPath.lastIndexOf(".");
-        var ext = lastDot === -1 ? "" : mediaPath.substring(lastDot + 1).toLowerCase();
+        if (lastDot === -1) return "video";
+        var ext = mediaPath.substring(lastDot + 1).toLowerCase();
         return Object.prototype.hasOwnProperty.call(EXT_MAP, ext) ? EXT_MAP[ext] : "video";
     }
 
     var projectRevision = 0;
     var projectTracking;
     var hostSession = String(new Date().getTime()) + ":" + Math.random();
+    var lastSnapshotToken = null;
+    var lastSnapshotData = null;
 
     function markProjectChanged() {
         projectRevision++;
+        lastSnapshotData = null;
     }
 
     function getProjectInfo(project) {
@@ -102,7 +105,7 @@ if (typeof JSON === "undefined") {
             name: project.name || "Untitled Project",
             path: projPath,
             sequencesCount: project.sequences ? project.sequences.numSequences : 0,
-            rootItemCount: project.rootItem.children.numItems
+            rootItemCount: project.rootItem.children ? project.rootItem.children.numItems : 0
         };
     }
 
@@ -110,7 +113,25 @@ if (typeof JSON === "undefined") {
         return JSON.stringify([hostSession, projectRevision, info]);
     }
 
-    // Recursively collect all items in the project
+    // Fast signature of root-level items and direct bin sizes to detect project changes
+    function buildFastSignature(project) {
+        if (!project || !project.rootItem || !project.rootItem.children) return "";
+        var rootChildren = project.rootItem.children;
+        var count = rootChildren.numItems;
+        var parts = [String(projectRevision), String(count)];
+        for (var i = 0; i < count; i++) {
+            var c = rootChildren[i];
+            if (c) {
+                parts.push(String(c.nodeId));
+                if (c.type === BIN_TYPE && c.children) {
+                    parts.push(String(c.children.numItems));
+                }
+            }
+        }
+        return parts.join(",");
+    }
+
+    // Recursively collect all items in the project with optimized fast-path dispatch
     function walkBin(bin, parentPath, list) {
         if (!bin) return;
         var children = bin.children;
@@ -120,30 +141,33 @@ if (typeof JSON === "undefined") {
             var item = children[i];
             if (!item) continue;
 
-            var isBin = false;
-            try {
-                isBin = (item.type === ProjectItemType.BIN);
-            } catch (e) {}
+            var iType = 0;
+            try { iType = item.type; } catch (e) {}
 
+            var isBin = (iType === BIN_TYPE);
             var isSeq = false;
-            if (!isBin) {
-                try {
-                    isSeq = item.isSequence();
-                } catch (e) {}
-            }
-
             var mediaPath = "";
-            if (!isBin && !isSeq) {
-                try {
-                    mediaPath = item.getMediaPath() || "";
-                } catch (e) {}
+            var catType = "video";
+
+            if (isBin) {
+                catType = "bin";
+            } else {
+                try { isSeq = item.isSequence(); } catch (e) {}
+                if (isSeq) {
+                    catType = "sequence";
+                } else {
+                    try { mediaPath = item.getMediaPath() || ""; } catch (e) {}
+                    catType = categorizeMediaPath(mediaPath);
+                }
             }
 
-            var itemName = item.name || "";
+            var itemName = "";
+            try { itemName = item.name || ""; } catch (e) {}
+
             list.push({
                 nodeId: item.nodeId,
                 name: itemName,
-                type: categorizeItem(isSeq, isBin, mediaPath),
+                type: catType,
                 isBin: isBin,
                 isSequence: isSeq,
                 mediaPath: mediaPath,
@@ -151,7 +175,7 @@ if (typeof JSON === "undefined") {
             });
 
             if (isBin) {
-                var nextPath = parentPath ? parentPath + "/" + itemName : itemName;
+                var nextPath = parentPath ? (parentPath + "/" + itemName) : itemName;
                 walkBin(item, nextPath, list);
             }
         }
@@ -170,13 +194,29 @@ if (typeof JSON === "undefined") {
         var project = app.project;
         var info = getProjectInfo(project);
         var token = snapshotToken(info);
-        if (!request.force && (projectTracking || request.checkOnly) && request.token === token) {
+
+        // Quick return if client token matches and no forced reload requested
+        if (!request.force && request.token === token) {
             return JSON.stringify({ token: token });
+        }
+
+        // Fast signature verification to reuse cached serialized snapshot if project is untouched
+        var currentSig = buildFastSignature(project);
+        if (!request.force && lastSnapshotData && lastSnapshotToken === token && lastSnapshotData.sig === currentSig) {
+            return JSON.stringify({ token: token, project: info, items: lastSnapshotData.items });
         }
 
         var list = [];
         if (info.id) walkBin(project.rootItem, "", list);
-        return JSON.stringify({ token: token, project: info, items: JSON.stringify(list) });
+        var itemsJson = JSON.stringify(list);
+
+        lastSnapshotToken = token;
+        lastSnapshotData = {
+            sig: currentSig,
+            items: itemsJson
+        };
+
+        return JSON.stringify({ token: token, project: info, items: itemsJson });
     };
 
     // Find or create nested bin path starting from rootItem
@@ -195,7 +235,7 @@ if (typeof JSON === "undefined") {
             var found = null;
             for (var c = 0; c < currentBin.children.numItems; c++) {
                 var child = currentBin.children[c];
-                if (child && child.type === ProjectItemType.BIN && child.name && child.name.toLowerCase() === partName.toLowerCase()) {
+                if (child && child.type === BIN_TYPE && child.name && child.name.toLowerCase() === partName.toLowerCase()) {
                     found = child;
                     break;
                 }
@@ -241,6 +281,7 @@ if (typeof JSON === "undefined") {
             }
         }
         refreshProjectPanelUI();
+        markProjectChanged();
         return "OK";
     };
 
@@ -271,7 +312,7 @@ if (typeof JSON === "undefined") {
         // Then recurse into sub-bins
         for (var j = 0; j < count; j++) {
             var sub = bin.children[j];
-            if (sub && sub.type === ProjectItemType.BIN) {
+            if (sub && sub.type === BIN_TYPE) {
                 var found = findItemByNodeId(sub, targetNodeId);
                 if (found) return found;
             }
@@ -286,7 +327,7 @@ if (typeof JSON === "undefined") {
         var count = bin.children.numItems;
         for (var i = 0; i < count; i++) {
             var item = bin.children[i];
-            if (!item || item.type === ProjectItemType.BIN) continue;
+            if (!item || item.type === BIN_TYPE) continue;
             if (targetBin && isItemDirectChildOf(item, targetBin)) continue;
 
             if (targetMediaPath) {
@@ -303,7 +344,7 @@ if (typeof JSON === "undefined") {
         }
         for (var j = 0; j < count; j++) {
             var sub = bin.children[j];
-            if (sub && sub.type === ProjectItemType.BIN && sub !== targetBin) {
+            if (sub && sub.type === BIN_TYPE && sub !== targetBin) {
                 var found = findItemFallback(sub, targetName, targetMediaPath, targetBin);
                 if (found) return found;
             }
@@ -331,7 +372,7 @@ if (typeof JSON === "undefined") {
             if (nodeId !== null && nodeId !== undefined && nodeId !== "") {
                 nodeMap["id:" + String(nodeId)] = child;
             }
-            if (child.type === ProjectItemType.BIN) indexItemsByNodeId(child, nodeMap);
+            if (child.type === BIN_TYPE) indexItemsByNodeId(child, nodeMap);
         }
     }
 
@@ -365,11 +406,8 @@ if (typeof JSON === "undefined") {
         var started = new Date().getTime();
         var root = app.project.rootItem;
         var binCache = {};
-        var nodeMap = null;
-        if (moves.length >= 16) {
-            nodeMap = {};
-            indexItemsByNodeId(root, nodeMap);
-        }
+        var nodeMap = {};
+        indexItemsByNodeId(root, nodeMap);
 
         var indexedAt = new Date().getTime();
         var movedCount = 0;
@@ -396,26 +434,23 @@ if (typeof JSON === "undefined") {
             }
             targetBin = destination.bin;
 
-            var item;
-            if (nodeMap) {
-                item = move.nodeId ? nodeMap["id:" + String(move.nodeId)] : null;
-                if (!item) item = findItemFallback(root, move.name, move.mediaPath, targetBin);
-            } else {
-                item = findItemInHierarchy(root, move.nodeId, move.name, move.mediaPath, targetBin);
-            }
+            var item = move.nodeId ? nodeMap["id:" + String(move.nodeId)] : null;
+            if (!item) item = findItemFallback(root, move.name, move.mediaPath, targetBin);
             if (!item || item === targetBin) continue;
+
             var id = item.nodeId;
             var key = id === null || id === undefined || id === "" ? null : "id:" + String(id);
             if (key ? destination.initialMembers[key] : isItemDirectChildOf(item, targetBin)) continue;
             try {
                 item.moveBin(targetBin);
-                destination.pending.push({ key: key, item: item, name: move.name || move.nodeId });
+                destination.pending.push({ key: key, item: item, name: move.name || move.nodeId, nodeId: id });
             } catch (e) {
                 $.writeln("moveBin error: " + e.toString());
             }
         }
 
         var movedAt = new Date().getTime();
+        var movedNodeIds = [];
         // Verify all moves into a bin in one pass over its children.
         for (var d = 0; d < destinations.length; d++) {
             destination = destinations[d];
@@ -424,15 +459,23 @@ if (typeof JSON === "undefined") {
             for (var i = 0; i < destination.pending.length; i++) {
                 var pending = destination.pending[i];
                 var arrived = pending.key ? members[pending.key] : isItemDirectChildOf(pending.item, destination.bin);
-                if (arrived) movedCount++;
-                else $.writeln("moveBin did not place item into targetBin: " + pending.name);
+                if (arrived) {
+                    movedCount++;
+                    if (pending.nodeId !== null && pending.nodeId !== undefined) {
+                        movedNodeIds.push(String(pending.nodeId));
+                    }
+                } else {
+                    $.writeln("moveBin did not place item into targetBin: " + pending.name);
+                }
             }
         }
 
         var verifiedAt = new Date().getTime();
+        markProjectChanged();
         refreshProjectPanelUI();
         return JSON.stringify({
             count: movedCount,
+            movedNodeIds: movedNodeIds,
             timings: {
                 indexMs: indexedAt - started,
                 moveMs: movedAt - indexedAt,
@@ -446,13 +489,11 @@ if (typeof JSON === "undefined") {
     function isItemBin(item) {
         if (!item) return false;
         try {
-            if (typeof item.isBin === 'function') {
-                return item.isBin();
-            }
+            if (item.type === BIN_TYPE) return true;
         } catch (e) {}
         try {
-            if (typeof ProjectItemType !== 'undefined' && typeof ProjectItemType.BIN !== 'undefined') {
-                if (item.type === ProjectItemType.BIN) return true;
+            if (typeof item.isBin === 'function') {
+                return item.isBin();
             }
         } catch (e) {}
         if (item.type === 1 || item.type === 2) {
@@ -546,6 +587,7 @@ if (typeof JSON === "undefined") {
         }
 
         refreshProjectPanelUI();
+        markProjectChanged();
         return JSON.stringify({ count: totalDeleted });
     };
 
@@ -620,6 +662,7 @@ if (typeof JSON === "undefined") {
         }
 
         refreshProjectPanelUI();
+        markProjectChanged();
 
         return JSON.stringify({
             success: true,
@@ -655,7 +698,10 @@ if (typeof JSON === "undefined") {
             }
             var result = item.changeMediaPath(target.fsName);
             var actual = item.getMediaPath();
-            if (actual && normalized(actual) === normalized(newFilePath)) return "OK";
+            if (actual && normalized(actual) === normalized(newFilePath)) {
+                markProjectChanged();
+                return "OK";
+            }
             return "Premiere did not adopt the destination path (result: " + result + ").";
         } catch (e) {
             return "Error: " + e.toString();
