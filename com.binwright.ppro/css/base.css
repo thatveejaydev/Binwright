@@ -289,26 +289,6 @@ select:focus, input[type="text"]:focus, input:focus, textarea:focus, .rule-text-
     width: auto;
 }
 
-/* Automatic Checkbox / Toggle */
-.auto-toggle {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 8px 10px;
-    background: var(--bg-surface);
-    border: 1px solid var(--border-subtle);
-    border-radius: 6px;
-    cursor: pointer;
-    margin-top: 10px;
-}
-
-.auto-toggle label {
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--text-secondary);
-    cursor: pointer;
-}
-
 input[type="checkbox"] {
     accent-color: var(--accent);
     width: 14px;

@@ -292,20 +292,9 @@
             }
         }
 
-        function executeSort(forceMoves, options) {
-            const opts = options || {};
+        function executeSort(moves) {
             return runWithSortOverlay('Sorting project', async () => {
-                let moves = forceMoves;
-                if (!Array.isArray(moves) || moves.length === 0) {
-                    await new Promise(resolve => scanProject(resolve));
-                    moves = calculateMoves();
-                }
-                if (!opts.isAutoSort) invalidateReview();
-
-                if (!moves.length) {
-                    if (!opts.silent && !opts.isAutoSort) showToast("Project already clean!");
-                    return;
-                }
+                invalidateReview();
 
                 let movedCount = 0;
                 if (window.__adobe_cep__) {
@@ -327,7 +316,7 @@
 
                 if (movedCount > 0) {
                     showToast(`Sorted ${movedCount} item${movedCount === 1 ? '' : 's'}.`);
-                } else if (!opts.silent && !opts.isAutoSort) {
+                } else {
                     showToast("No items were moved.");
                 }
             });
@@ -436,51 +425,6 @@
             });
         }
 
-        // --- AUTO-SORT BACKGROUND WATCHER ---
-        function toggleAutoSort(enabled) {
-            state.autoSortEnabled = enabled;
-            if (state.autoSortTimer) {
-                clearInterval(state.autoSortTimer);
-                state.autoSortTimer = null;
-            }
-            state.isAutoSorting = false;
-            state.autoSortFailCount = {};
-
-            if (enabled) {
-                showToast("Auto-sort active");
-                state.autoSortTimer = setInterval(() => {
-                    if (state.isAutoSorting || state.sortInProgress || state.relocatingFiles) return;
-                    state.isAutoSorting = true;
-
-                    scanProject(() => {
-                        // Reset failure counts for items that are no longer in root
-                        if (state.autoSortFailCount) {
-                            Object.keys(state.autoSortFailCount).forEach(nid => {
-                                const foundItem = state.items.find(i => String(i.nodeId) === String(nid));
-                                if (!foundItem || (foundItem.parentPath && foundItem.parentPath !== 'root' && foundItem.parentPath !== 'Project root')) {
-                                    delete state.autoSortFailCount[nid];
-                                }
-                            });
-                        }
-
-                        const moves = calculateMoves();
-                        let rootMoves = moves.filter(m => m.originPath === 'Project root' || m.originPath === 'root' || !m.originPath);
-
-                        // Filter out items that have repeatedly failed to move (prevent infinite loop spam)
-                        rootMoves = rootMoves.filter(m => (state.autoSortFailCount[m.nodeId] || 0) < 3);
-
-                        if (rootMoves.length > 0) {
-                            rootMoves.forEach(m => {
-                                state.autoSortFailCount[m.nodeId] = (state.autoSortFailCount[m.nodeId] || 0) + 1;
-                            });
-                            executeSort(rootMoves, { isAutoSort: true });
-                        }
-                        state.isAutoSorting = false;
-                    });
-                }, 3000);
-            }
-        }
-
         function bindEvents() {
             ['keydown', 'keyup', 'click', 'dblclick', 'contextmenu', 'submit', 'dragstart', 'drop'].forEach(type => {
                 document.addEventListener(type, blockSortInput, true);
@@ -499,7 +443,6 @@
             if (elements.btnDeleteAllBins) {
                 elements.btnDeleteAllBins.addEventListener('click', deleteAllBins);
             }
-            elements.chkAutoSort.addEventListener('change', (e) => toggleAutoSort(e.target.checked));
 
             const btnRefreshStatus = document.getElementById('btnRefreshProjectStatus');
             if (btnRefreshStatus) {

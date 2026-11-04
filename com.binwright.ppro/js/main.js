@@ -37,9 +37,6 @@
         items: [],
         selectedNodeIds: new Set(),
         fileViewMode: "disk", // 'disk' | 'bin'
-        autoSortEnabled: false,
-        autoSortTimer: null,
-        lastKnownItemCount: 0,
         isSimulated: false
     };
 
@@ -56,7 +53,6 @@
         btnSortByType: document.getElementById('btnSortByType'),
         btnFlattenBins: document.getElementById('btnFlattenBins'),
         btnDeleteAllBins: document.getElementById('btnDeleteAllBins'),
-        chkAutoSort: document.getElementById('chkAutoSort'),
 
         // Layout tab
         layoutPresetSelect: document.getElementById('layoutPresetSelect'),
@@ -253,7 +249,6 @@
             bridge.call('getAllProjectItems', (itemsRes) => {
                 try {
                     state.items = JSON.parse(itemsRes) || [];
-                    state.lastKnownItemCount = state.items.length;
                     updateUIWithState();
                 } catch (e) {
                     console.error("Error parsing project items:", e);
