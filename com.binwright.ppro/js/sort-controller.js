@@ -256,61 +256,81 @@
         }
 
         // --- SORT EXECUTION ---
+        const sortLoading = document.getElementById('sortLoading');
+
+        function blockSortInput(event) {
+            if (!state.sortInProgress) return;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        }
+
+        async function runWithSortOverlay(label, operation) {
+            if (state.sortInProgress || state.relocatingFiles) return;
+
+            const previousFocus = document.activeElement;
+            state.sortInProgress = true;
+            sortLoading.querySelector('.sort-loading-content span:last-child').textContent = label + '…';
+            sortLoading.hidden = false;
+            sortLoading.focus();
+
+            try {
+                await new Promise(resolve => {
+                    const timer = setTimeout(resolve, 100);
+                    window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+                        clearTimeout(timer);
+                        resolve();
+                    }));
+                });
+                await operation();
+            } catch (error) {
+                console.error(label + ' failed:', error);
+                showToast(label + ' failed. Rescan the project before trying again.');
+            } finally {
+                state.sortInProgress = false;
+                sortLoading.hidden = true;
+                if (previousFocus && previousFocus.isConnected) previousFocus.focus();
+            }
+        }
+
         function executeSort(forceMoves, options) {
             const opts = options || {};
-            const hasExplicitMoves = Array.isArray(forceMoves) && forceMoves.length > 0;
-            let moves = hasExplicitMoves ? forceMoves : null;
-
-            const runSort = () => {
-                if (!moves) {
-                    invalidateReview();
+            return runWithSortOverlay('Sorting project', async () => {
+                let moves = forceMoves;
+                if (!Array.isArray(moves) || moves.length === 0) {
+                    await new Promise(resolve => scanProject(resolve));
                     moves = calculateMoves();
                 }
                 if (!opts.isAutoSort) invalidateReview();
 
-                if (!moves || moves.length === 0) {
+                if (!moves.length) {
                     if (!opts.silent && !opts.isAutoSort) showToast("Project already clean!");
                     return;
                 }
 
+                let movedCount = 0;
                 if (window.__adobe_cep__) {
-                    bridge.call('moveItemsToBins', (res) => {
-                        let movedCount = 0;
-                        try {
-                            const result = JSON.parse(res);
-                            movedCount = (typeof result.count === 'number') ? result.count : moves.length;
-                        } catch (e) {
-                            console.error("Error parsing moveItemsToBins result:", e, res);
-                        }
-                        if (!opts.isAutoSort) closePreviewModal();
-                        scanProject(() => {
-                            if (movedCount > 0) {
-                                showToast(`Sorted ${movedCount} item${movedCount === 1 ? '' : 's'}.`);
-                            } else if (!opts.silent && !opts.isAutoSort) {
-                                showToast("No items were moved.");
-                            }
-                        });
-                    }, moves);
+                    const response = await new Promise(resolve => bridge.call('moveItemsToBins', resolve, moves));
+                    const result = JSON.parse(response);
+                    if (result.error) throw new Error(result.error);
+                    movedCount = typeof result.count === 'number' ? result.count : 0;
+                    await new Promise(resolve => scanProject(resolve));
                 } else {
-                    // Simulated
-                    moves.forEach(m => {
-                        const found = state.items.find(i => i.nodeId === m.nodeId);
-                        if (found) found.parentPath = m.targetPath;
+                    moves.forEach(move => {
+                        const item = state.items.find(candidate => candidate.nodeId === move.nodeId);
+                        if (item) {
+                            item.parentPath = move.targetPath;
+                            movedCount++;
+                        }
                     });
-                    showToast(`Sorted ${moves.length} item${moves.length === 1 ? '' : 's'}.`);
-                    if (!opts.isAutoSort) closePreviewModal();
                     updateUIWithState();
                 }
-            };
 
-            // When sorting directly without preview, rescan project first to ensure 100% fresh data
-            if (!hasExplicitMoves) {
-                scanProject(() => {
-                    runSort();
-                });
-            } else {
-                runSort();
-            }
+                if (movedCount > 0) {
+                    showToast(`Sorted ${movedCount} item${movedCount === 1 ? '' : 's'}.`);
+                } else if (!opts.silent && !opts.isAutoSort) {
+                    showToast("No items were moved.");
+                }
+            });
         }
 
         // --- CREATE BINS & FLATTEN BINS ---
@@ -328,103 +348,92 @@
         }
 
         function flattenEmptyBins() {
-            const preset = window.presetManager.getActivePreset();
-            const protectedNames = preset.folders.map(f => f.name);
-            invalidateReview();
+            return runWithSortOverlay('Removing empty bins', async () => {
+                const preset = window.presetManager.getActivePreset();
+                const protectedNames = preset.folders.map(f => f.name);
+                invalidateReview();
 
-            if (window.__adobe_cep__) {
-                bridge.call('flattenEmptyBins', (res) => {
+                if (window.__adobe_cep__) {
+                    const res = await new Promise(resolve => bridge.call('flattenEmptyBins', resolve, protectedNames));
+                    const result = JSON.parse(res);
+                    if (result.error) throw new Error(result.error);
+                    const count = result.count || 0;
+                    await new Promise(resolve => scanProject(resolve));
+                    showToast(count > 0
+                        ? `Removed ${count} empty bin${count === 1 ? '' : 's'}.`
+                        : 'No empty bins found.');
+                } else {
+                    // Standalone preview fallback
                     let count = 0;
-                    try {
-                        const r = JSON.parse(res);
-                        count = (typeof r.count === 'number') ? r.count : 0;
-                    } catch (e) {}
-
+                    if (Array.isArray(state.items)) {
+                        const occupiedPaths = new Set();
+                        state.items.forEach(it => {
+                            if (it.parentPath && it.parentPath !== 'root') {
+                                occupiedPaths.add(it.parentPath.toLowerCase());
+                            }
+                        });
+                        state.items = state.items.filter(it => {
+                            if (it.isBin) {
+                                const isProtected = protectedNames.some(p => p.toLowerCase() === it.name.toLowerCase());
+                                const hasChildren = occupiedPaths.has(it.name.toLowerCase());
+                                if (!isProtected && !hasChildren) {
+                                    count++;
+                                    return false;
+                                }
+                            }
+                            return true;
+                        });
+                    }
                     if (count > 0) {
                         showToast(`Removed ${count} empty bin${count === 1 ? '' : 's'}.`);
                     } else {
                         showToast("No empty bins found.");
                     }
-                    scanProject();
-                }, protectedNames);
-            } else {
-                // Standalone preview fallback
-                let count = 0;
-                if (Array.isArray(state.items)) {
-                    const occupiedPaths = new Set();
-                    state.items.forEach(it => {
-                        if (it.parentPath && it.parentPath !== 'root') {
-                            occupiedPaths.add(it.parentPath.toLowerCase());
-                        }
-                    });
-                    state.items = state.items.filter(it => {
-                        if (it.isBin) {
-                            const isProtected = protectedNames.some(p => p.toLowerCase() === it.name.toLowerCase());
-                            const hasChildren = occupiedPaths.has(it.name.toLowerCase());
-                            if (!isProtected && !hasChildren) {
-                                count++;
-                                return false;
-                            }
-                        }
-                        return true;
-                    });
+                    renderPreviewList();
                 }
-                if (count > 0) {
-                    showToast(`Removed ${count} empty bin${count === 1 ? '' : 's'}.`);
-                } else {
-                    showToast("No empty bins found.");
-                }
-                renderPreviewList();
-            }
+            });
         }
 
         function deleteAllBins() {
+            if (state.sortInProgress || state.relocatingFiles) return;
             const confirmMsg = "Are you sure you want to delete all bins?\n\nAll files and sequences will be safely moved to the root level.";
             if (!confirm(confirmMsg)) {
                 return;
             }
 
-            invalidateReview();
+            return runWithSortOverlay('Deleting bins', async () => {
+                invalidateReview();
 
-            if (window.__adobe_cep__) {
-                bridge.call('deleteAllBins', (res) => {
-                    let r = null;
-                    try {
-                        r = JSON.parse(res);
-                    } catch (e) {}
-
-                    if (r && r.success) {
-                        const binText = `${r.deletedBinsCount || 0} bin${r.deletedBinsCount === 1 ? '' : 's'}`;
-                        const itemText = `${r.movedItemsCount || 0} item${r.movedItemsCount === 1 ? '' : 's'}`;
-                        showToast(`Deleted ${binText} (${itemText} moved to root).`);
-                    } else if (r && r.error) {
-                        showToast(`Error: ${r.error}`);
-                    } else {
-                        showToast("All bins deleted.");
-                    }
-                    scanProject();
-                });
-            } else {
-                // Standalone preview fallback
-                let movedCount = 0;
-                let binCount = 0;
-                if (Array.isArray(state.items)) {
-                    state.items.forEach(it => {
-                        if (!it.isBin) {
-                            if (it.parentPath && it.parentPath !== 'root') {
-                                it.parentPath = 'root';
-                                movedCount++;
+                if (window.__adobe_cep__) {
+                    const res = await new Promise(resolve => bridge.call('deleteAllBins', resolve));
+                    const result = JSON.parse(res);
+                    if (!result.success) throw new Error(result.error || 'Premiere could not delete the bins.');
+                    const binText = `${result.deletedBinsCount || 0} bin${result.deletedBinsCount === 1 ? '' : 's'}`;
+                    const itemText = `${result.movedItemsCount || 0} item${result.movedItemsCount === 1 ? '' : 's'}`;
+                    await new Promise(resolve => scanProject(resolve));
+                    showToast(`Deleted ${binText} (${itemText} moved to root).`);
+                } else {
+                    // Standalone preview fallback
+                    let movedCount = 0;
+                    let binCount = 0;
+                    if (Array.isArray(state.items)) {
+                        state.items.forEach(it => {
+                            if (!it.isBin) {
+                                if (it.parentPath && it.parentPath !== 'root') {
+                                    it.parentPath = 'root';
+                                    movedCount++;
+                                }
+                            } else {
+                                binCount++;
                             }
-                        } else {
-                            binCount++;
-                        }
-                    });
-                    state.items = state.items.filter(it => !it.isBin);
+                        });
+                        state.items = state.items.filter(it => !it.isBin);
+                    }
+                    showToast(`Deleted ${binCount} bins (${movedCount} items moved to root).`);
+                    renderPreviewList();
+                    renderFileTree();
                 }
-                showToast(`Deleted ${binCount} bins (${movedCount} items moved to root).`);
-                renderPreviewList();
-                renderFileTree();
-            }
+            });
         }
 
         // --- AUTO-SORT BACKGROUND WATCHER ---
@@ -440,7 +449,7 @@
             if (enabled) {
                 showToast("Auto-sort active");
                 state.autoSortTimer = setInterval(() => {
-                    if (state.isAutoSorting) return;
+                    if (state.isAutoSorting || state.sortInProgress || state.relocatingFiles) return;
                     state.isAutoSorting = true;
 
                     scanProject(() => {
@@ -473,6 +482,9 @@
         }
 
         function bindEvents() {
+            ['keydown', 'keyup', 'click', 'dblclick', 'contextmenu', 'submit', 'dragstart', 'drop'].forEach(type => {
+                document.addEventListener(type, blockSortInput, true);
+            });
             // Sort tab
             elements.sortPresetSelect.addEventListener('change', (e) => {
                 invalidateReview();

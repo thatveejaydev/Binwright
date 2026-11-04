@@ -1,3 +1,43 @@
+.sort-loading {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    display: grid;
+    place-items: center;
+    background: rgba(0, 0, 0, .6);
+    outline: none;
+}
+
+.sort-loading[hidden] { display: none; }
+.sort-loading-content {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 18px;
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+    background: var(--bg-surface);
+    color: var(--text-primary);
+}
+.sort-loading-spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--border-color);
+    border-top-color: var(--accent-blue);
+    border-right-color: var(--accent-blue);
+    border-radius: 50%;
+    animation: sort-loading-spin .75s linear infinite;
+    will-change: transform;
+}
+@keyframes sort-loading-spin {
+    from { transform: translateZ(0) rotate(0deg); }
+    to { transform: translateZ(0) rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .sort-loading-spinner { animation: sort-loading-pulse 1.6s ease-in-out infinite alternate; }
+}
+@keyframes sort-loading-pulse { to { opacity: .45; } }
+
 /* Toast Message */
 .toast {
     position: fixed;

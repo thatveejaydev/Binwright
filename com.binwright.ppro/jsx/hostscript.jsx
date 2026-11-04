@@ -178,7 +178,7 @@ if (typeof JSON === "undefined") {
 
     // Find or create nested bin path starting from rootItem
     // e.g. "Video/Camera RAW/A Cam" or "Audio/Music"
-    function findOrCreateBinByPath(pathStr) {
+    function findOrCreateBinByPath(pathStr, requireFullPath) {
         if (!pathStr || pathStr === "" || pathStr === "root") {
             return app.project.rootItem;
         }
@@ -201,6 +201,7 @@ if (typeof JSON === "undefined") {
                 found = currentBin.createBin(partName);
             }
             if (!found) {
+                if (requireFullPath) return null;
                 break;
             }
             currentBin = found;
@@ -316,6 +317,21 @@ if (typeof JSON === "undefined") {
         return findItemFallback(bin, targetName, targetMediaPath, targetBin);
     }
 
+    function indexItemsByNodeId(bin, nodeMap) {
+        if (!bin || !bin.children) return;
+        var children = bin.children;
+        var count = children.numItems;
+        for (var i = 0; i < count; i++) {
+            var child = children[i];
+            if (!child) continue;
+            var nodeId = child.nodeId;
+            if (nodeId !== null && nodeId !== undefined && nodeId !== "") {
+                nodeMap["id:" + String(nodeId)] = child;
+            }
+            if (child.type === ProjectItemType.BIN) indexItemsByNodeId(child, nodeMap);
+        }
+    }
+
     // Execute bulk moves into destination bins
     // moves: [{ nodeId: string, targetPath: string, name?: string, mediaPath?: string }, ...]
     $._PPP_.moveItemsToBins = function(movesJsonStr) {
@@ -323,11 +339,40 @@ if (typeof JSON === "undefined") {
         var moves = JSON.parse(movesJsonStr);
         if (!moves || moves.length === 0) return JSON.stringify({ count: 0 });
 
+        var root = app.project.rootItem;
+        var binCache = {};
+        var nodeMap = null;
+        if (moves.length >= 16) {
+            nodeMap = {};
+            indexItemsByNodeId(root, nodeMap);
+        }
+
         var movedCount = 0;
         for (var m = 0; m < moves.length; m++) {
             var move = moves[m];
-            var targetBin = findOrCreateBinByPath(move.targetPath);
-            var item = findItemInHierarchy(app.project.rootItem, move.nodeId, move.name, move.mediaPath, targetBin);
+            var binKey = "path:" + (move.targetPath || "");
+            var targetBin = binCache[binKey];
+            if (!targetBin) {
+                try {
+                    targetBin = findOrCreateBinByPath(move.targetPath, true);
+                } catch (error) {
+                    $.writeln("Could not resolve destination bin " + move.targetPath + ": " + error.toString());
+                    continue;
+                }
+                if (!targetBin) {
+                    $.writeln("Could not resolve destination bin: " + move.targetPath);
+                    continue;
+                }
+                binCache[binKey] = targetBin;
+            }
+
+            var item;
+            if (nodeMap) {
+                item = move.nodeId ? nodeMap["id:" + String(move.nodeId)] : null;
+                if (!item) item = findItemFallback(root, move.name, move.mediaPath, targetBin);
+            } else {
+                item = findItemInHierarchy(root, move.nodeId, move.name, move.mediaPath, targetBin);
+            }
             if (item && targetBin && item !== targetBin) {
                 // If item is ALREADY inside targetBin, do not move and do not increment movedCount
                 if (isItemDirectChildOf(item, targetBin)) {
