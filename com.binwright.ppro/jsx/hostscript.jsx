@@ -49,55 +49,36 @@ if (typeof JSON === "undefined") {
 
 (function() {
 
-    // Helper: Determine file type from extension and properties
-    function categorizeItem(item) {
-        if (!item) return "unknown";
-        if (item.isSequence()) return "sequence";
-        if (item.type === ProjectItemType.BIN) return "bin";
+    var EXT_MAP = {
+        // Camera RAW
+        r3d: "cameraraw", braw: "cameraraw", ari: "cameraraw", arri: "cameraraw",
+        crm: "cameraraw", dng: "cameraraw",
+        // Video
+        mp4: "video", mov: "video", mkv: "video", avi: "video", mxf: "video",
+        wmv: "video", flv: "video", webm: "video", m4v: "video", mts: "video",
+        m2ts: "video", mpg: "video", mpeg: "video",
+        // Audio
+        wav: "audio", mp3: "audio", aac: "audio", aif: "audio", aiff: "audio",
+        m4a: "audio", flac: "audio", ogg: "audio", wma: "audio",
+        // Images
+        png: "image", jpg: "image", jpeg: "image", tif: "image", tiff: "image",
+        psd: "image", ai: "image", svg: "image", gif: "image", bmp: "image",
+        exr: "image", webp: "image",
+        // Graphics
+        mogrt: "graphics", prfpset: "graphics", aep: "graphics",
+        // Captions
+        srt: "captions", ass: "captions", ttml: "captions", vtt: "captions",
+        scc: "captions", mcc: "captions", xml: "captions"
+    };
 
-        var mediaPath = "";
-        try {
-            mediaPath = item.getMediaPath();
-        } catch (e) {}
+    function categorizeItem(isSeq, isBin, mediaPath) {
+        if (isBin) return "bin";
+        if (isSeq) return "sequence";
+        if (!mediaPath) return "solids";
 
-        if (!mediaPath || mediaPath === "") {
-            // Likely a synthetic item: Color matte, adjustment layer, transparent video, bars
-            return "solids";
-        }
-
-        var ext = "";
         var lastDot = mediaPath.lastIndexOf(".");
-        if (lastDot !== -1) {
-            ext = mediaPath.substring(lastDot + 1).toLowerCase();
-        }
-
-        var rawExts = ["r3d", "braw", "ari", "arri", "crm", "dng"];
-        var videoExts = ["mp4", "mov", "mkv", "avi", "mxf", "wmv", "flv", "webm", "m4v", "mts", "m2ts", "mpg", "mpeg"];
-        var audioExts = ["wav", "mp3", "aac", "aif", "aiff", "m4a", "flac", "ogg", "wma"];
-        var imageExts = ["png", "jpg", "jpeg", "tif", "tiff", "psd", "ai", "svg", "gif", "bmp", "exr", "webp"];
-        var gfxExts = ["mogrt", "prfpset", "aep"];
-        var captionExts = ["srt", "ass", "ttml", "vtt", "scc", "mcc", "xml"];
-
-        for (var i = 0; i < rawExts.length; i++) {
-            if (ext === rawExts[i]) return "cameraraw";
-        }
-        for (var v = 0; v < videoExts.length; v++) {
-            if (ext === videoExts[v]) return "video";
-        }
-        for (var a = 0; a < audioExts.length; a++) {
-            if (ext === audioExts[a]) return "audio";
-        }
-        for (var im = 0; im < imageExts.length; im++) {
-            if (ext === imageExts[im]) return "image";
-        }
-        for (var g = 0; g < gfxExts.length; g++) {
-            if (ext === gfxExts[g]) return "graphics";
-        }
-        for (var c = 0; c < captionExts.length; c++) {
-            if (ext === captionExts[c]) return "captions";
-        }
-
-        return "video"; // fallback default for media
+        var ext = lastDot === -1 ? "" : mediaPath.substring(lastDot + 1).toLowerCase();
+        return Object.prototype.hasOwnProperty.call(EXT_MAP, ext) ? EXT_MAP[ext] : "video";
     }
 
     // Get current project details
@@ -123,46 +104,47 @@ if (typeof JSON === "undefined") {
 
     // Recursively collect all items in the project
     function walkBin(bin, parentPath, list) {
-        if (!bin || !bin.children) return;
-        var count = bin.children.numItems;
+        if (!bin) return;
+        var children = bin.children;
+        if (!children) return;
+        var count = children.numItems;
         for (var i = 0; i < count; i++) {
-            var item = bin.children[i];
+            var item = children[i];
             if (!item) continue;
 
-            var mediaPath = "";
+            var isBin = false;
             try {
-                mediaPath = item.getMediaPath();
+                isBin = (item.type === ProjectItemType.BIN);
             } catch (e) {}
 
             var isSeq = false;
-            try {
-                isSeq = item.isSequence();
-            } catch (e) {}
+            if (!isBin) {
+                try {
+                    isSeq = item.isSequence();
+                } catch (e) {}
+            }
 
-            var isOff = false;
-            try {
-                isOff = item.isOffline();
-            } catch (e) {}
+            var mediaPath = "";
+            if (!isBin && !isSeq) {
+                try {
+                    mediaPath = item.getMediaPath() || "";
+                } catch (e) {}
+            }
 
-            var itemType = categorizeItem(item);
-            var currentPath = parentPath ? (parentPath + "/" + item.name) : item.name;
-
-            var itemData = {
+            var itemName = item.name || "";
+            list.push({
                 nodeId: item.nodeId,
-                name: item.name,
-                type: itemType,
-                isBin: (item.type === ProjectItemType.BIN),
+                name: itemName,
+                type: categorizeItem(isSeq, isBin, mediaPath),
+                isBin: isBin,
                 isSequence: isSeq,
-                isOffline: isOff,
                 mediaPath: mediaPath,
-                parentPath: parentPath || "root",
-                currentPath: currentPath
-            };
+                parentPath: parentPath || "root"
+            });
 
-            list.push(itemData);
-
-            if (item.type === ProjectItemType.BIN) {
-                walkBin(item, currentPath, list);
+            if (isBin) {
+                var nextPath = parentPath ? parentPath + "/" + itemName : itemName;
+                walkBin(item, nextPath, list);
             }
         }
     }
