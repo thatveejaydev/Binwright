@@ -2,7 +2,7 @@
     'use strict';
 
     Binwright.createLayoutController = function ({ state, elements, fs, rules, showToast, updateSortTabStatus, invalidateReview }) {
-        const { MATCHING_RULE_TYPES, getMatchTypeName, FILTER_OPERATORS, FILTER_MATCH_MODES, isWildcardMatchType, FILTER_FUNNEL_SVG, escapeHtml, hasActiveFilters, formatFilterSummary, getRuleConflictSignature, FOLDER_OUTLINE_SVG, FOLDER_FILLED_SVG } = rules;
+        const { MATCHING_RULE_TYPES, getMatchTypeName, FILTER_OPERATORS, FILTER_MATCH_MODES, isWildcardMatchType, FILTER_FUNNEL_SVG, escapeHtml, hasActiveFilters, formatFilterSummary, getRuleConflictSignature, FOLDER_OUTLINE_SVG, FOLDER_FILLED_SVG, globToRegex } = rules;
 
         // --- PRESETS CONTROLLER ---
         function populatePresetDropdowns() {
@@ -50,8 +50,8 @@
                 sortBadge.textContent = `${count} bin${count === 1 ? '' : 's'}`;
             }
 
-            elements.btnDeletePreset.style.display = activePreset.isBuiltin ? 'none' : 'flex';
-            elements.btnRenamePreset.style.display = activePreset.isBuiltin ? 'none' : '';
+            if (elements.btnDeletePreset) elements.btnDeletePreset.style.display = activePreset.isBuiltin ? 'none' : 'flex';
+            if (elements.btnRenamePreset) elements.btnRenamePreset.style.display = activePreset.isBuiltin ? 'none' : '';
             elements.btnAddRule.style.display = activePreset.isBuiltin ? 'none' : 'block';
             document.getElementById('builtinLayoutHint').hidden = !activePreset.isBuiltin;
 
@@ -1054,14 +1054,15 @@
         const PRESET_ICON_SVG = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>`;
 
         function closeAllCustomMenus() {
-            closeCustomTypeMenu();
-            closeCustomParentMenu();
-            closeSortPresetMenu();
-            closeLayoutPresetMenu();
-            closeAllCardTypeMenus();
-            closeFilterFloatingMenu();
-            closeFilterPopover();
-            closeRuleMoreMenu();
+            if (typeof closeCustomTypeMenu === 'function') closeCustomTypeMenu();
+            if (typeof closeCustomParentMenu === 'function') closeCustomParentMenu();
+            if (typeof closeSortPresetMenu === 'function') closeSortPresetMenu();
+            if (typeof closeLayoutPresetMenu === 'function') closeLayoutPresetMenu();
+            if (typeof closeAllCardTypeMenus === 'function') closeAllCardTypeMenus();
+            if (typeof closeFilterFloatingMenu === 'function') closeFilterFloatingMenu();
+            if (typeof closeFilterPopover === 'function') closeFilterPopover();
+            if (typeof closeRuleMoreMenu === 'function') closeRuleMoreMenu();
+            if (typeof closePresetActionsMenu === 'function') closePresetActionsMenu();
         }
 
         // Sort Preset Dropdown
@@ -1418,6 +1419,30 @@
                     valInput.autocomplete = 'off';
                     valInput.spellcheck = false;
 
+                    function validatePattern() {
+                        const val = valInput.value.trim();
+                        valInput.classList.remove('is-invalid');
+                        valInput.removeAttribute('title');
+                        if (!val) return;
+                        if (cond.operator === 'regex') {
+                            try {
+                                new RegExp(val);
+                            } catch (err) {
+                                valInput.classList.add('is-invalid');
+                                valInput.setAttribute('title', 'Invalid Regular Expression: ' + err.message);
+                            }
+                        } else if (cond.operator === 'pattern') {
+                            try {
+                                if (typeof globToRegex === 'function') globToRegex(val);
+                            } catch (err) {
+                                valInput.classList.add('is-invalid');
+                                valInput.setAttribute('title', 'Invalid Wildcard Pattern: ' + err.message);
+                            }
+                        }
+                    }
+
+                    validatePattern();
+
                     opBtn.addEventListener('click', (e) => {
                         e.stopPropagation();
                         openFilterFloatingMenu(opBtn, FILTER_OPERATORS, cond.operator, (selectedOp) => {
@@ -1426,12 +1451,14 @@
                             const labelSpan = opBtn.querySelector('.filter-op-label');
                             if (labelSpan) labelSpan.textContent = nextOpObj.label;
                             valInput.placeholder = nextOpObj.placeholder || 'Value...';
+                            validatePattern();
                             valInput.focus();
                         });
                     });
 
                     valInput.addEventListener('input', () => {
                         cond.value = valInput.value;
+                        validatePattern();
                     });
 
                     valInput.addEventListener('keydown', (e) => {
@@ -1683,6 +1710,182 @@
             showToast(newFilters.conditions.length > 0 ? `Saved rule for "${leafName}"` : `Updated rule for "${leafName}"`);
         }
 
+        // Preset Management Functions
+        async function renameActivePreset() {
+            const activePreset = window.presetManager.getActivePreset();
+            if (activePreset.isBuiltin) return;
+            const newName = await window.Binwright.dialog.prompt({
+                title: "Rename Folder Layout",
+                message: "Enter folder layout name:",
+                defaultValue: activePreset.name
+            });
+            if (newName && newName.trim() && newName.trim() !== activePreset.name) {
+                window.presetManager.renamePreset(activePreset.id, newName);
+                populatePresetDropdowns();
+                showToast(`Renamed layout to "${newName.trim()}"`);
+            }
+        }
+
+        function duplicateActivePreset() {
+            const activeId = window.presetManager.getActivePresetId();
+            const copy = window.presetManager.duplicatePreset(activeId);
+            populatePresetDropdowns();
+            renderLayoutRules();
+            showToast(`Duplicated: ${copy.name}`);
+        }
+
+        async function createNewPreset() {
+            const name = await window.Binwright.dialog.prompt({
+                title: "New Folder Layout",
+                message: "Enter name for new layout:",
+                defaultValue: "My Custom Layout"
+            });
+            if (name && name.trim()) {
+                const newPreset = window.presetManager.addPreset(name.trim());
+                populatePresetDropdowns();
+                renderLayoutRules();
+                showToast(`Created ${newPreset.name}`);
+            }
+        }
+
+        async function deleteActivePreset() {
+            const activeId = window.presetManager.getActivePresetId();
+            const activePreset = window.presetManager.getActivePreset();
+            if (activePreset.isBuiltin) return;
+            const confirmed = await window.Binwright.dialog.confirm({
+                title: "Delete Layout Preset",
+                message: `Are you sure you want to delete layout "${activePreset.name}"?`,
+                confirmText: "Delete Layout",
+                cancelText: "Cancel",
+                isDanger: true
+            });
+            if (confirmed) {
+                if (window.presetManager.deletePreset(activeId)) {
+                    if (state.collapsedFolders) state.collapsedFolders.clear();
+                    populatePresetDropdowns();
+                    renderLayoutRules();
+                    showToast("Layout deleted");
+                } else {
+                    window.Binwright.dialog.alert({
+                        title: "Cannot Delete Layout",
+                        message: "Cannot delete the only layout."
+                    });
+                }
+            }
+        }
+
+        function closePresetActionsMenu() {
+            const menu = elements.presetActionsMenu || document.getElementById('presetActionsMenu');
+            const btn = elements.btnPresetActions || document.getElementById('btnPresetActions');
+            if (menu) {
+                menu.classList.remove('is-open');
+                menu.style.display = 'none';
+            }
+            if (btn) {
+                btn.classList.remove('is-open');
+                btn.setAttribute('aria-expanded', 'false');
+            }
+        }
+
+        function openPresetActionsMenu() {
+            const menu = elements.presetActionsMenu || document.getElementById('presetActionsMenu');
+            const btn = elements.btnPresetActions || document.getElementById('btnPresetActions');
+            if (!menu || !btn) return;
+
+            if (menu.classList.contains('is-open')) {
+                closePresetActionsMenu();
+                return;
+            }
+
+            closeAllCustomMenus();
+
+            const activePreset = window.presetManager.getActivePreset();
+            const isBuiltin = !!(activePreset && activePreset.isBuiltin);
+
+            menu.innerHTML = `
+                <button type="button" class="rule-menu-item" data-action="rename" ${isBuiltin ? 'disabled title="Default layout cannot be renamed"' : ''}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
+                    </svg>
+                    <span>Rename Layout</span>
+                </button>
+                <button type="button" class="rule-menu-item" data-action="new">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="12" y1="5" x2="12" y2="19"/>
+                        <line x1="5" y1="12" x2="19" y2="12"/>
+                    </svg>
+                    <span>New Layout</span>
+                </button>
+                <button type="button" class="rule-menu-item" data-action="duplicate">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                    </svg>
+                    <span>Duplicate Layout</span>
+                </button>
+                <div class="rule-menu-divider"></div>
+                <button type="button" class="rule-menu-item is-danger" data-action="delete" ${isBuiltin ? 'disabled title="Default layout cannot be deleted"' : ''}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="3 6 5 6 21 6"/>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                    </svg>
+                    <span>Delete Layout</span>
+                </button>
+            `;
+
+            menu.querySelector('[data-action="rename"]')?.addEventListener('click', (e) => {
+                e.stopPropagation();
+                closePresetActionsMenu();
+                renameActivePreset();
+            });
+
+            menu.querySelector('[data-action="new"]')?.addEventListener('click', (e) => {
+                e.stopPropagation();
+                closePresetActionsMenu();
+                createNewPreset();
+            });
+
+            menu.querySelector('[data-action="duplicate"]')?.addEventListener('click', (e) => {
+                e.stopPropagation();
+                closePresetActionsMenu();
+                duplicateActivePreset();
+            });
+
+            menu.querySelector('[data-action="delete"]')?.addEventListener('click', (e) => {
+                e.stopPropagation();
+                closePresetActionsMenu();
+                deleteActivePreset();
+            });
+
+            menu.style.display = 'flex';
+            menu.style.visibility = 'hidden';
+            menu.classList.add('is-open');
+
+            const rect = btn.getBoundingClientRect();
+            const menuRect = menu.getBoundingClientRect();
+            const menuWidth = menuRect.width || 160;
+
+            let left = rect.right - menuWidth;
+            if (left < 8) left = 8;
+            if (left + menuWidth > window.innerWidth - 8) {
+                left = window.innerWidth - menuWidth - 8;
+            }
+
+            let top = rect.bottom + 4;
+            if (top + menuRect.height > window.innerHeight - 8 && rect.top - menuRect.height - 4 >= 8) {
+                top = rect.top - menuRect.height - 4;
+            }
+
+            menu.style.position = 'fixed';
+            menu.style.top = `${Math.round(top)}px`;
+            menu.style.left = `${Math.round(left)}px`;
+            menu.style.zIndex = '99999';
+            menu.style.visibility = 'visible';
+
+            btn.classList.add('is-open');
+            btn.setAttribute('aria-expanded', 'true');
+        }
+
         function bindEvents() {
             // Layout tab - Presets
             elements.layoutPresetSelect.addEventListener('change', (e) => {
@@ -1693,70 +1896,20 @@
                 renderLayoutRules();
             });
 
-            // Rename Preset
-            elements.btnRenamePreset.addEventListener('click', async () => {
-                const activePreset = window.presetManager.getActivePreset();
-                const newName = await window.Binwright.dialog.prompt({
-                    title: "Rename Folder Layout",
-                    message: "Enter folder layout name:",
-                    defaultValue: activePreset.name
+            // Layout Actions Dropdown Menu Trigger
+            const btnPresetActions = elements.btnPresetActions || document.getElementById('btnPresetActions');
+            if (btnPresetActions) {
+                btnPresetActions.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    openPresetActionsMenu();
                 });
-                if (newName && newName.trim() && newName.trim() !== activePreset.name) {
-                    window.presetManager.renamePreset(activePreset.id, newName);
-                    populatePresetDropdowns();
-                    showToast(`Renamed layout to "${newName.trim()}"`);
-                }
-            });
+            }
 
-            // Duplicate Preset
-            elements.btnDuplicatePreset.addEventListener('click', () => {
-                const activeId = window.presetManager.getActivePresetId();
-                const copy = window.presetManager.duplicatePreset(activeId);
-                populatePresetDropdowns();
-                renderLayoutRules();
-                showToast(`Duplicated: ${copy.name}`);
-            });
-
-            // New Preset
-            elements.btnNewPreset.addEventListener('click', async () => {
-                const name = await window.Binwright.dialog.prompt({
-                    title: "New Folder Layout",
-                    message: "Enter name for new layout:",
-                    defaultValue: "My Custom Layout"
-                });
-                if (name && name.trim()) {
-                    const newPreset = window.presetManager.addPreset(name.trim());
-                    populatePresetDropdowns();
-                    renderLayoutRules();
-                    showToast(`Created ${newPreset.name}`);
-                }
-            });
-
-            // Delete Preset
-            elements.btnDeletePreset.addEventListener('click', async () => {
-                const activeId = window.presetManager.getActivePresetId();
-                const activePreset = window.presetManager.getActivePreset();
-                const confirmed = await window.Binwright.dialog.confirm({
-                    title: "Delete Layout Preset",
-                    message: `Are you sure you want to delete layout "${activePreset.name}"?`,
-                    confirmText: "Delete Layout",
-                    cancelText: "Cancel",
-                    isDanger: true
-                });
-                if (confirmed) {
-                    if (window.presetManager.deletePreset(activeId)) {
-                        if (state.collapsedFolders) state.collapsedFolders.clear();
-                        populatePresetDropdowns();
-                        renderLayoutRules();
-                        showToast("Layout deleted");
-                    } else {
-                        window.Binwright.dialog.alert({
-                            title: "Cannot Delete Layout",
-                            message: "Cannot delete the only layout."
-                        });
-                    }
-                }
-            });
+            // Backward compatibility bindings if individual buttons exist
+            if (elements.btnRenamePreset) elements.btnRenamePreset.addEventListener('click', renameActivePreset);
+            if (elements.btnDuplicatePreset) elements.btnDuplicatePreset.addEventListener('click', duplicateActivePreset);
+            if (elements.btnNewPreset) elements.btnNewPreset.addEventListener('click', createNewPreset);
+            if (elements.btnDeletePreset) elements.btnDeletePreset.addEventListener('click', deleteActivePreset);
 
             // Helper: Process imported preset JSON content
             function handleImportedPresetData(content) {
@@ -2057,6 +2210,9 @@
                 if (!e.target.closest('.btn-rule-more') && !e.target.closest('#ruleMoreMenu')) {
                     closeRuleMoreMenu();
                 }
+                if (!e.target.closest('#btnPresetActions') && !e.target.closest('#presetActionsMenu')) {
+                    closePresetActionsMenu();
+                }
                 if (!e.target.closest('.filter-mini-trigger') && !e.target.closest('#filterFloatingMenu')) {
                     closeFilterFloatingMenu();
                 }
@@ -2075,6 +2231,10 @@
                 if (e.key === 'Escape') {
                     if (elements.ruleMoreMenu && elements.ruleMoreMenu.classList.contains('is-open')) {
                         closeRuleMoreMenu();
+                        return;
+                    }
+                    if (elements.presetActionsMenu && elements.presetActionsMenu.classList.contains('is-open')) {
+                        closePresetActionsMenu();
                         return;
                     }
                     if (elements.filterFloatingMenu && elements.filterFloatingMenu.classList.contains('is-open')) {
@@ -2160,7 +2320,7 @@
             });
         }
 
-        return { bindEvents, closeAllCustomMenus, populatePresetDropdowns, updatePresetUIState, renderLayoutRules, setCustomTypeValue, renderCustomTypeMenu, setCustomParentValue, renderCustomParentMenu };
+        return { bindEvents, closeAllCustomMenus, closePresetActionsMenu, populatePresetDropdowns, updatePresetUIState, renderLayoutRules, setCustomTypeValue, renderCustomTypeMenu, setCustomParentValue, renderCustomParentMenu };
     };
 
     

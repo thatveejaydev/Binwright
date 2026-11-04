@@ -43,6 +43,13 @@
     border-color: var(--border-hover);
 }
 
+.icon-btn.is-open {
+    background: var(--bg-hover);
+    color: #ffffff;
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 0 1px var(--accent-blue);
+}
+
 /* Preset info banner */
 .preset-banner {
     display: flex;

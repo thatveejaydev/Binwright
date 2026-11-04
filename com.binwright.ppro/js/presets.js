@@ -8,7 +8,9 @@ const VALID_FILTER_OPERATORS = new Set([
     "starts_with",
     "ends_with",
     "exact",
-    "extension"
+    "extension",
+    "pattern",
+    "regex"
 ]);
 
 const DEFAULT_PRESETS = [

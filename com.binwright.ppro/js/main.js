@@ -59,12 +59,10 @@
 
         // Layout tab
         layoutPresetSelect: document.getElementById('layoutPresetSelect'),
-        btnRenamePreset: document.getElementById('btnRenamePreset'),
-        btnNewPreset: document.getElementById('btnNewPreset'),
-        btnDuplicatePreset: document.getElementById('btnDuplicatePreset'),
         btnExportPreset: document.getElementById('btnExportPreset'),
         btnImportPreset: document.getElementById('btnImportPreset'),
-        btnDeletePreset: document.getElementById('btnDeletePreset'),
+        btnPresetActions: document.getElementById('btnPresetActions'),
+        presetActionsMenu: document.getElementById('presetActionsMenu'),
         presetFileInput: document.getElementById('presetFileInput'),
         ruleList: document.getElementById('ruleList'),
         btnAddRule: document.getElementById('btnAddRule'),
@@ -204,7 +202,13 @@
     function setupTabs() {
         elements.tabs.forEach(tab => {
             tab.addEventListener('click', () => {
-                layout.closeAllCustomMenus();
+                try {
+                    if (layout && typeof layout.closeAllCustomMenus === 'function') {
+                        layout.closeAllCustomMenus();
+                    }
+                } catch (err) {
+                    console.warn("Could not close custom menus on tab switch:", err);
+                }
                 elements.tabs.forEach(t => t.classList.remove('active'));
                 elements.tabContents.forEach(c => c.classList.remove('active'));
 
@@ -283,8 +287,10 @@
         if (!Array.isArray(items)) throw new Error('Invalid project items.');
 
         state.project = info;
-        elements.projectPill.textContent = info.name;
-        elements.projectPill.title = info.path || info.name;
+        if (elements.projectPill) {
+            elements.projectPill.textContent = info.name;
+            elements.projectPill.title = info.path || info.name;
+        }
         if (info.path && !elements.relocateDestInput.value) {
             elements.relocateDestInput.value = getDirectory(info.path);
         }
@@ -319,7 +325,9 @@
             bridge.onThemeChange(syncThemeWithPremiere);
             window.addEventListener('focus', checkProjectSnapshot);
         }
-        elements.refreshBtn.addEventListener('click', () => scanProject(ok => { if (ok) showToast("Project rescanned"); }));
+        if (elements.refreshBtn) {
+            elements.refreshBtn.addEventListener('click', () => scanProject(ok => { if (ok) showToast("Project rescanned"); }));
+        }
         media.bindEvents();
         sort.bindEvents();
         layout.bindEvents();
@@ -415,7 +423,7 @@
             sequencesCount: 1,
             rootItemCount: 9
         };
-        elements.projectPill.textContent = state.project.name;
+        if (elements.projectPill) elements.projectPill.textContent = state.project.name;
         elements.relocateDestInput.value = "D:/Projects";
 
         state.items = [

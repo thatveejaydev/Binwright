@@ -72,7 +72,9 @@
         { value: 'starts_with', label: 'Starts with', pillPrefix: 'starts with', placeholder: 'e.g. CAM_A_' },
         { value: 'ends_with', label: 'Ends with', pillPrefix: 'ends with', placeholder: 'e.g. _sfx' },
         { value: 'exact', label: 'Exact name', pillPrefix: 'exact', placeholder: 'e.g. main_edit' },
-        { value: 'extension', label: 'Extension', pillPrefix: 'ext', placeholder: 'e.g. mp3, wav' }
+        { value: 'extension', label: 'Extension', pillPrefix: 'ext', placeholder: 'e.g. mp3, wav' },
+        { value: 'pattern', label: 'Wildcard (*)', pillPrefix: 'pattern', placeholder: 'e.g. A[0-9]*_C* or *drone*' },
+        { value: 'regex', label: 'Regex (/.../)', pillPrefix: 'regex', placeholder: 'e.g. ^A\\d{3}_C\\d{3} or \\b(boom|lav)\\b' }
     ];
 
     const FILTER_MATCH_MODES = [
@@ -83,6 +85,8 @@
     // Automatic specificity scores (higher wins automatically regardless of folder order)
     const OPERATOR_SPECIFICITY = {
         exact: 100,
+        regex: 90,
+        pattern: 85,
         starts_with: 80,
         ends_with: 80,
         extension: 60,
@@ -96,6 +100,41 @@
         return Object.prototype.hasOwnProperty.call(OPERATOR_SPECIFICITY, op)
             ? OPERATOR_SPECIFICITY[op]
             : 40;
+    }
+
+    // Convert shell/glob wildcard string (*, ?, [a-z]) into RegExp
+    function globToRegex(pattern, caseSensitive) {
+        if (!pattern) return null;
+        let reStr = '^';
+        let inCharClass = false;
+        for (let i = 0; i < pattern.length; i++) {
+            const c = pattern[i];
+            if (c === '\\') {
+                if (i + 1 < pattern.length) {
+                    reStr += '\\' + pattern[++i];
+                } else {
+                    reStr += '\\\\';
+                }
+            } else if (c === '[') {
+                inCharClass = true;
+                reStr += '[';
+            } else if (c === ']' && inCharClass) {
+                inCharClass = false;
+                reStr += ']';
+            } else if (inCharClass) {
+                reStr += c;
+            } else if (c === '*') {
+                reStr += '.*';
+            } else if (c === '?') {
+                reStr += '.';
+            } else if (['.', '+', '^', '$', '(', ')', '{', '}', '|'].includes(c)) {
+                reStr += '\\' + c;
+            } else {
+                reStr += c;
+            }
+        }
+        reStr += '$';
+        return new RegExp(reStr, caseSensitive ? '' : 'i');
     }
 
     function isWildcardMatchType(matchType) {
@@ -143,6 +182,12 @@
                 .map(e => `.${e}`)
                 .join(', ');
             return `ext ${exts || rawVal}`;
+        }
+        if (opObj.value === 'regex') {
+            return `regex /${rawVal}/`;
+        }
+        if (opObj.value === 'pattern') {
+            return `pattern ${rawVal}`;
         }
         return `${opObj.pillPrefix} ${rawVal}`;
     }
@@ -226,12 +271,32 @@
         const extensions = op === 'extension'
             ? new Set(val.split(/[,\s]+/).map(ext => ext.replace(/^\.+/, '')).filter(Boolean))
             : null;
+
+        let regexObj = null;
+        if (op === 'regex') {
+            try {
+                regexObj = new RegExp(rawVal, caseSensitive ? '' : 'i');
+            } catch (err) {
+                regexObj = null;
+            }
+        } else if (op === 'pattern') {
+            try {
+                regexObj = globToRegex(rawVal, caseSensitive);
+            } catch (err) {
+                regexObj = null;
+            }
+        }
+
         return {
             condition: cond,
             score: getOperatorSpecificity(cond.operator),
             matches(fileInfo) {
                 const stem = caseSensitive ? fileInfo.stem : fileInfo.lowerStem;
                 switch (op) {
+                    case 'regex':
+                        return regexObj ? (regexObj.test(fileInfo.stem) || regexObj.test(fileInfo.fullName)) : false;
+                    case 'pattern':
+                        return regexObj ? (regexObj.test(fileInfo.stem) || regexObj.test(fileInfo.fullName)) : false;
                     case 'contains':
                         return stem.includes(val);
                     case 'not_contains':
@@ -257,6 +322,10 @@
         switch (op) {
             case 'exact':
                 return `filename is "${rawVal}"`;
+            case 'regex':
+                return `filename matches regex /${rawVal}/`;
+            case 'pattern':
+                return `filename matches pattern "${rawVal}"`;
             case 'starts_with':
                 return `filename starts with "${rawVal}"`;
             case 'ends_with':
@@ -501,5 +570,5 @@
         return moves;
     }
 
-    Binwright.rules = { MATCHING_RULE_TYPES, getMatchTypeName, FILTER_OPERATORS, FILTER_MATCH_MODES, isWildcardMatchType, FILTER_FUNNEL_SVG, escapeHtml, hasActiveFilters, formatFilterSummary, getRuleConflictSignature, FOLDER_OUTLINE_SVG, FOLDER_FILLED_SVG, getItemIconSvg, compilePreset, normalizeProjectItems, planMoves };
+    Binwright.rules = { MATCHING_RULE_TYPES, getMatchTypeName, FILTER_OPERATORS, FILTER_MATCH_MODES, isWildcardMatchType, FILTER_FUNNEL_SVG, escapeHtml, hasActiveFilters, formatFilterSummary, getRuleConflictSignature, FOLDER_OUTLINE_SVG, FOLDER_FILLED_SVG, getItemIconSvg, compilePreset, normalizeProjectItems, planMoves, globToRegex };
 })(window.Binwright = window.Binwright || {});
