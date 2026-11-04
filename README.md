@@ -62,4 +62,4 @@ A Common Extensibility Platform (CEP) extension for **Adobe Premiere Pro** provi
 ## 🔍 Standalone Testing & Debugging
 
 * **Browser Preview**: Open `com.binwright.ppro/index.html` in Chrome or Edge to test the UI with mock project data.
-* **Remote Debugger**: Open Google Chrome and navigate to `http://localhost:8088` while Premiere Pro is running to inspect the panel via Chrome DevTools.
+* **Remote Debugger**: Open Google Chrome and navigate to `http://localhost:8128` while Premiere Pro is running to inspect the panel via Chrome DevTools.

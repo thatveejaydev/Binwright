@@ -81,26 +81,34 @@ if (typeof JSON === "undefined") {
         return Object.prototype.hasOwnProperty.call(EXT_MAP, ext) ? EXT_MAP[ext] : "video";
     }
 
-    // Get current project details
-    $._PPP_.getProjectInfo = function() {
-        if (!app.project) {
-            return JSON.stringify({ error: "No active project open in Premiere Pro." });
+    var projectRevision = 0;
+    var projectTracking;
+    var hostSession = String(new Date().getTime()) + ":" + Math.random();
+
+    function markProjectChanged() {
+        projectRevision++;
+    }
+
+    function getProjectInfo(project) {
+        if (!project || !project.rootItem) {
+            return { id: "", name: "No Project", path: "", sequencesCount: 0, rootItemCount: 0 };
         }
         var projPath = "";
-        try {
-            projPath = app.project.path;
-        } catch (e) {}
-
-        var sequencesCount = app.project.sequences ? app.project.sequences.numSequences : 0;
-        var rootItemCount = app.project.rootItem ? app.project.rootItem.children.numItems : 0;
-
-        return JSON.stringify({
-            name: app.project.name || "Untitled Project",
+        var documentId = "";
+        try { projPath = project.path || ""; } catch (e) {}
+        try { documentId = project.documentID || ""; } catch (e) {}
+        return {
+            id: JSON.stringify([documentId, String(project.rootItem.nodeId)]),
+            name: project.name || "Untitled Project",
             path: projPath,
-            sequencesCount: sequencesCount,
-            rootItemCount: rootItemCount
-        });
-    };
+            sequencesCount: project.sequences ? project.sequences.numSequences : 0,
+            rootItemCount: project.rootItem.children.numItems
+        };
+    }
+
+    function snapshotToken(info) {
+        return JSON.stringify([hostSession, projectRevision, info]);
+    }
 
     // Recursively collect all items in the project
     function walkBin(bin, parentPath, list) {
@@ -149,13 +157,26 @@ if (typeof JSON === "undefined") {
         }
     }
 
-    $._PPP_.getAllProjectItems = function() {
-        if (!app.project || !app.project.rootItem) {
-            return JSON.stringify([]);
+    $._PPP_.getProjectSnapshot = function(requestJson) {
+        var request = JSON.parse(requestJson);
+        if (typeof projectTracking === "undefined") {
+            projectTracking = false;
+            try {
+                projectTracking = app.bind("onProjectChanged", markProjectChanged) === true;
+                app.bind("onItemsAddedToProjectSuccess", markProjectChanged);
+            } catch (e) {}
         }
+
+        var project = app.project;
+        var info = getProjectInfo(project);
+        var token = snapshotToken(info);
+        if (!request.force && (projectTracking || request.checkOnly) && request.token === token) {
+            return JSON.stringify({ token: token });
+        }
+
         var list = [];
-        walkBin(app.project.rootItem, "", list);
-        return JSON.stringify(list);
+        if (info.id) walkBin(project.rootItem, "", list);
+        return JSON.stringify({ token: token, project: info, items: JSON.stringify(list) });
     };
 
     // Find or create nested bin path starting from rootItem
@@ -314,13 +335,34 @@ if (typeof JSON === "undefined") {
         }
     }
 
+    function indexDirectChildren(bin) {
+        var members = {};
+        var children = bin.children;
+        if (!children) return members;
+        var count = children.numItems;
+        for (var i = 0; i < count; i++) {
+            var child = children[i];
+            if (!child) continue;
+            var id = child.nodeId;
+            if (id !== null && id !== undefined && id !== "") {
+                members["id:" + String(id)] = true;
+            }
+        }
+        return members;
+    }
+
     // Execute bulk moves into destination bins
-    // moves: [{ nodeId: string, targetPath: string, name?: string, mediaPath?: string }, ...]
+    // Request contains the reviewed snapshot token and its planned moves.
     $._PPP_.moveItemsToBins = function(movesJsonStr) {
         if (!app.project || !app.project.rootItem) return JSON.stringify({ count: 0, error: "No project open" });
-        var moves = JSON.parse(movesJsonStr);
+        var request = JSON.parse(movesJsonStr);
+        if (request.token !== snapshotToken(getProjectInfo(app.project))) {
+            return JSON.stringify({ count: 0, error: "The project changed. Review the updated sort plan." });
+        }
+        var moves = request.moves;
         if (!moves || moves.length === 0) return JSON.stringify({ count: 0 });
 
+        var started = new Date().getTime();
         var root = app.project.rootItem;
         var binCache = {};
         var nodeMap = null;
@@ -329,12 +371,15 @@ if (typeof JSON === "undefined") {
             indexItemsByNodeId(root, nodeMap);
         }
 
+        var indexedAt = new Date().getTime();
         var movedCount = 0;
+        var destinations = [];
         for (var m = 0; m < moves.length; m++) {
             var move = moves[m];
             var binKey = "path:" + (move.targetPath || "");
-            var targetBin = binCache[binKey];
-            if (!targetBin) {
+            var destination = binCache[binKey];
+            var targetBin;
+            if (!destination) {
                 try {
                     targetBin = findOrCreateBinByPath(move.targetPath, true);
                 } catch (error) {
@@ -345,8 +390,11 @@ if (typeof JSON === "undefined") {
                     $.writeln("Could not resolve destination bin: " + move.targetPath);
                     continue;
                 }
-                binCache[binKey] = targetBin;
+                destination = { bin: targetBin, initialMembers: indexDirectChildren(targetBin), pending: [] };
+                binCache[binKey] = destination;
+                destinations.push(destination);
             }
+            targetBin = destination.bin;
 
             var item;
             if (nodeMap) {
@@ -355,27 +403,43 @@ if (typeof JSON === "undefined") {
             } else {
                 item = findItemInHierarchy(root, move.nodeId, move.name, move.mediaPath, targetBin);
             }
-            if (item && targetBin && item !== targetBin) {
-                // If item is ALREADY inside targetBin, do not move and do not increment movedCount
-                if (isItemDirectChildOf(item, targetBin)) {
-                    continue;
-                }
-                try {
-                    item.moveBin(targetBin);
-                    // Verify the item was actually moved into targetBin
-                    if (isItemDirectChildOf(item, targetBin)) {
-                        movedCount++;
-                    } else {
-                        $.writeln("moveBin did not place item into targetBin: " + (move.name || move.nodeId));
-                    }
-                } catch (e) {
-                    $.writeln("moveBin error: " + e.toString());
-                }
+            if (!item || item === targetBin) continue;
+            var id = item.nodeId;
+            var key = id === null || id === undefined || id === "" ? null : "id:" + String(id);
+            if (key ? destination.initialMembers[key] : isItemDirectChildOf(item, targetBin)) continue;
+            try {
+                item.moveBin(targetBin);
+                destination.pending.push({ key: key, item: item, name: move.name || move.nodeId });
+            } catch (e) {
+                $.writeln("moveBin error: " + e.toString());
             }
         }
 
+        var movedAt = new Date().getTime();
+        // Verify all moves into a bin in one pass over its children.
+        for (var d = 0; d < destinations.length; d++) {
+            destination = destinations[d];
+            if (!destination.pending.length) continue;
+            var members = indexDirectChildren(destination.bin);
+            for (var i = 0; i < destination.pending.length; i++) {
+                var pending = destination.pending[i];
+                var arrived = pending.key ? members[pending.key] : isItemDirectChildOf(pending.item, destination.bin);
+                if (arrived) movedCount++;
+                else $.writeln("moveBin did not place item into targetBin: " + pending.name);
+            }
+        }
+
+        var verifiedAt = new Date().getTime();
         refreshProjectPanelUI();
-        return JSON.stringify({ count: movedCount });
+        return JSON.stringify({
+            count: movedCount,
+            timings: {
+                indexMs: indexedAt - started,
+                moveMs: movedAt - indexedAt,
+                verifyMs: verifiedAt - movedAt,
+                redrawMs: new Date().getTime() - verifiedAt
+            }
+        });
     };
 
     // Helper to safely check if an item is a bin

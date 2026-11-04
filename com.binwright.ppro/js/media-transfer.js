@@ -2,15 +2,27 @@
     'use strict';
 
     Binwright.createTransferService = function ({ fs, path, crypto, bridge }) {
-        function mediaFileSnapshot(file) {
-            const stat = fs.lstatSync(file);
+        function fileOperation(method, ...args) {
+            return new Promise((resolve, reject) => {
+                fs[method](...args, (error, result) => error ? reject(error) : resolve(result));
+            });
+        }
+
+        async function sameMediaFile(source, target, normalizePath) {
+            const paths = await Promise.all([fileOperation('realpath', source), fileOperation('realpath', target)]);
+            return normalizePath(paths[0]) === normalizePath(paths[1]);
+        }
+
+        async function mediaFileSnapshot(file) {
+            const stat = await fileOperation('lstat', file);
             if (!stat.isFile()) throw new Error('Cannot compare a non-regular file: ' + file);
             return [stat.dev, stat.ino, stat.size, stat.mtime.getTime(), stat.ctime.getTime()];
         }
 
-        function verifyMediaSnapshots(source, target, snapshots) {
-            const unchanged = [source, target].every((file, index) =>
-                mediaFileSnapshot(file).every((value, field) => value === snapshots[index][field])
+        async function verifyMediaSnapshots(source, target, snapshots) {
+            const current = await Promise.all([mediaFileSnapshot(source), mediaFileSnapshot(target)]);
+            const unchanged = current.every((fields, index) =>
+                fields.every((value, field) => value === snapshots[index][field])
             );
             if (!unchanged) throw new Error('A file changed during duplicate verification.');
         }
@@ -27,21 +39,21 @@
 
         async function prepareRelocationTarget(source, target, normalizePath) {
             try {
-                fs.copyFileSync(source, target, fs.constants.COPYFILE_EXCL);
+                await fileOperation('copyFile', source, target, fs.constants.COPYFILE_EXCL);
                 return { target, kind: 'copied' };
             } catch (error) {
                 if (error.code !== 'EEXIST') throw error;
             }
 
             try {
-                if (normalizePath(fs.realpathSync(source)) === normalizePath(fs.realpathSync(target))) {
+                if (await sameMediaFile(source, target, normalizePath)) {
                     throw new Error('The file is already at the destination.');
                 }
-                const snapshots = [mediaFileSnapshot(source), mediaFileSnapshot(target)];
+                const snapshots = await Promise.all([mediaFileSnapshot(source), mediaFileSnapshot(target)]);
                 if (snapshots[0][2] === snapshots[1][2]) {
                     const sourceHash = await hashMediaFile(source);
                     const targetHash = await hashMediaFile(target);
-                    verifyMediaSnapshots(source, target, snapshots);
+                    await verifyMediaSnapshots(source, target, snapshots);
                     if (sourceHash === targetHash) return { target, kind: 'reused', snapshots };
                 }
             } catch (error) {
@@ -52,7 +64,7 @@
             for (let number = 2; ; number++) {
                 const candidate = path.join(parsed.dir, parsed.name + ' (' + number + ')' + parsed.ext);
                 try {
-                    fs.copyFileSync(source, candidate, fs.constants.COPYFILE_EXCL);
+                    await fileOperation('copyFile', source, candidate, fs.constants.COPYFILE_EXCL);
                     return { target: candidate, kind: 'renamed' };
                 } catch (error) {
                     if (error.code !== 'EEXIST') throw error;
@@ -68,7 +80,7 @@
             fs.unlinkSync(source);
         }
 
-        return { prepareRelocationTarget, verifyMediaSnapshots, relink, removeSource };
+        return { prepareRelocationTarget, verifyMediaSnapshots, sameMediaFile, relink, removeSource };
     };
 
     

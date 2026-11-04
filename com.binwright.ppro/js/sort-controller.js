@@ -1,7 +1,7 @@
 (function (Binwright) {
     'use strict';
 
-    Binwright.createSortController = function ({ state, elements, bridge, calculateMoves, escapeHtml, getItemIconSvg, scanProject, showToast, updatePresetUIState, renderLayoutRules, updateUIWithState, renderFileTree }) {
+    Binwright.createSortController = function ({ state, elements, bridge, calculateMoves, escapeHtml, getItemIconSvg, scanProject, showToast, updatePresetUIState, renderLayoutRules, updateUIWithState }) {
         function updateSortTabStatus() {
             const dot = document.getElementById('sortStatusDot');
             const text = document.getElementById('sortStatusText');
@@ -293,16 +293,37 @@
         }
 
         function executeSort(moves) {
+            const token = state.snapshotToken;
             return runWithSortOverlay('Sorting project', async () => {
                 invalidateReview();
 
+                const timingStatus = document.getElementById('lastSortTiming');
+                timingStatus.hidden = true;
                 let movedCount = 0;
                 if (window.__adobe_cep__) {
-                    const response = await new Promise(resolve => bridge.call('moveItemsToBins', resolve, moves));
+                    const response = await new Promise(resolve => bridge.call('moveItemsToBins', resolve, {
+                        moves,
+                        token
+                    }));
                     const result = JSON.parse(response);
-                    if (result.error) throw new Error(result.error);
+                    if (result.error) {
+                        await scanProject();
+                        throw new Error(result.error);
+                    }
                     movedCount = typeof result.count === 'number' ? result.count : 0;
-                    await new Promise(resolve => scanProject(resolve));
+                    const refreshStarted = performance.now();
+                    await scanProject();
+                    const timings = {
+                        planned: moves.length,
+                        moved: movedCount,
+                        ...result.timings,
+                        refreshMs: Math.round(performance.now() - refreshStarted)
+                    };
+                    console.info('Binwright sort timing (ms)', timings);
+                    if (result.timings) {
+                        timingStatus.textContent = `Last sort · ${movedCount}/${moves.length} moved · Index ${timings.indexMs} ms · Move ${timings.moveMs} ms · Verify ${timings.verifyMs} ms · Redraw ${timings.redrawMs} ms · Refresh ${timings.refreshMs} ms`;
+                        timingStatus.hidden = false;
+                    }
                 } else {
                     moves.forEach(move => {
                         const item = state.items.find(candidate => candidate.nodeId === move.nodeId);
@@ -347,7 +368,7 @@
                     const result = JSON.parse(res);
                     if (result.error) throw new Error(result.error);
                     const count = result.count || 0;
-                    await new Promise(resolve => scanProject(resolve));
+                    await scanProject();
                     showToast(count > 0
                         ? `Removed ${count} empty bin${count === 1 ? '' : 's'}.`
                         : 'No empty bins found.');
@@ -378,7 +399,7 @@
                     } else {
                         showToast("No empty bins found.");
                     }
-                    renderPreviewList();
+                    updateUIWithState();
                 }
             });
         }
@@ -399,7 +420,7 @@
                     if (!result.success) throw new Error(result.error || 'Premiere could not delete the bins.');
                     const binText = `${result.deletedBinsCount || 0} bin${result.deletedBinsCount === 1 ? '' : 's'}`;
                     const itemText = `${result.movedItemsCount || 0} item${result.movedItemsCount === 1 ? '' : 's'}`;
-                    await new Promise(resolve => scanProject(resolve));
+                    await scanProject();
                     showToast(`Deleted ${binText} (${itemText} moved to root).`);
                 } else {
                     // Standalone preview fallback
@@ -419,8 +440,7 @@
                         state.items = state.items.filter(it => !it.isBin);
                     }
                     showToast(`Deleted ${binCount} bins (${movedCount} items moved to root).`);
-                    renderPreviewList();
-                    renderFileTree();
+                    updateUIWithState();
                 }
             });
         }
@@ -438,7 +458,9 @@
             });
 
             elements.btnCreateBins.addEventListener('click', createBins);
-            elements.btnSortByType.addEventListener('click', () => { scanProject(openPreviewModal); });
+            elements.btnSortByType.addEventListener('click', () => {
+                scanProject(ok => { if (ok) openPreviewModal(); }, false);
+            });
             elements.btnFlattenBins.addEventListener('click', flattenEmptyBins);
             if (elements.btnDeleteAllBins) {
                 elements.btnDeleteAllBins.addEventListener('click', deleteAllBins);
@@ -449,9 +471,9 @@
                 btnRefreshStatus.addEventListener('click', (e) => {
                     e.stopPropagation();
                     btnRefreshStatus.classList.add('is-spinning');
-                    scanProject(() => {
+                    scanProject(ok => {
                         setTimeout(() => btnRefreshStatus.classList.remove('is-spinning'), 400);
-                        showToast("Project rescanned");
+                        if (ok) showToast("Project rescanned");
                     });
                 });
             }

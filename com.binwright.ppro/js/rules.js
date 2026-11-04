@@ -219,38 +219,36 @@
         return { fullName, stem, extension };
     }
 
-    function evaluateSingleCondition(fileInfo, cond, caseSensitive) {
-        if (!cond || typeof cond.value !== 'string' || !cond.value.trim()) return true;
+    function compileCondition(cond, caseSensitive) {
         const op = cond.operator || 'contains';
         const rawVal = cond.value.trim();
-
-        const norm = (s) => caseSensitive ? s : s.toLowerCase();
-        const stem = norm(fileInfo.stem);
-        const val = norm(rawVal);
-
-        switch (op) {
-            case 'contains':
-                return stem.includes(val);
-            case 'not_contains':
-                return !stem.includes(val);
-            case 'starts_with':
-                return stem.startsWith(val);
-            case 'ends_with':
-                return stem.endsWith(val);
-            case 'exact':
-                return stem === val;
-            case 'extension': {
-                if (!fileInfo.extension) return false;
-                const itemExt = norm(fileInfo.extension.replace(/^\.+/, ''));
-                const allowedExts = rawVal
-                    .split(/[,\s]+/)
-                    .map(e => norm(e.replace(/^\.+/, '')))
-                    .filter(Boolean);
-                return allowedExts.includes(itemExt);
+        const val = caseSensitive ? rawVal : rawVal.toLowerCase();
+        const extensions = op === 'extension'
+            ? new Set(val.split(/[,\s]+/).map(ext => ext.replace(/^\.+/, '')).filter(Boolean))
+            : null;
+        return {
+            condition: cond,
+            score: getOperatorSpecificity(cond.operator),
+            matches(fileInfo) {
+                const stem = caseSensitive ? fileInfo.stem : fileInfo.lowerStem;
+                switch (op) {
+                    case 'contains':
+                        return stem.includes(val);
+                    case 'not_contains':
+                        return !stem.includes(val);
+                    case 'starts_with':
+                        return stem.startsWith(val);
+                    case 'ends_with':
+                        return stem.endsWith(val);
+                    case 'exact':
+                        return stem === val;
+                    case 'extension':
+                        return extensions.has(caseSensitive ? fileInfo.extension : fileInfo.lowerExtension);
+                    default:
+                        return stem.includes(val);
+                }
             }
-            default:
-                return stem.includes(val);
-        }
+        };
     }
 
     function formatMatchedConditionReason(cond, fileInfo) {
@@ -276,82 +274,42 @@
         }
     }
 
-    /**
-     * Evaluate a single unlocked leaf rule against an item and compute its specificity score & winning reason.
-     */
-    function evaluateLeafRule(item, fileInfo, folder, orderIndex) {
-        if (!matchesMediaType(item, folder)) return null;
-
-        let destination = folder.name;
-        if (item.isSequence && folder.subBins && folder.subBins.length > 0) {
-            destination += '/' + folder.subBins[0];
-        }
-
+    function compileLeafRule(folder, orderIndex) {
         const hasSpecificType = !isWildcardMatchType(folder.matchType);
-        const conds = getActiveConditions(folder);
-
-        if (conds.length > 0) {
-            const matchMode = (folder.filters && folder.filters.matchMode === 'any') ? 'any' : 'all';
-            const caseSensitive = !!(folder.filters && folder.filters.caseSensitive);
-
-            let matchedConds = [];
-            if (matchMode === 'any') {
-                matchedConds = conds.filter(c => evaluateSingleCondition(fileInfo, c, caseSensitive));
-                if (matchedConds.length === 0) return null;
-            } else {
-                const allPassed = conds.every(c => evaluateSingleCondition(fileInfo, c, caseSensitive));
-                if (!allPassed) return null;
-                matchedConds = conds.slice();
-            }
-
-            const sortedMatched = matchedConds
-                .slice()
-                .sort((a, b) => getOperatorSpecificity(b.operator) - getOperatorSpecificity(a.operator));
-
-            const score = getOperatorSpecificity(sortedMatched[0].operator);
-            let reason = '';
-            if (matchMode === 'any' || sortedMatched.length === 1) {
-                reason = formatMatchedConditionReason(sortedMatched[0], fileInfo);
-            } else if (sortedMatched.length === 2) {
-                reason = `${formatMatchedConditionReason(sortedMatched[0], fileInfo)} & ${formatMatchedConditionReason(sortedMatched[1], fileInfo)}`;
-            } else {
-                reason = `${formatMatchedConditionReason(sortedMatched[0], fileInfo)} (+${sortedMatched.length - 1} more)`;
-            }
-
-            return {
-                folder,
-                destination,
-                score,
-                reason,
-                hasSpecificType,
-                matchedCount: matchMode === 'all' ? sortedMatched.length : 1,
-                orderIndex
-            };
-        }
-
-        // Unfiltered leaf destination
-        if (hasSpecificType) {
-            return {
-                folder,
-                destination,
-                score: MEDIA_TYPE_ONLY_SCORE,
-                reason: `type is ${getMatchTypeName(folder.matchType)}`,
-                hasSpecificType: true,
-                matchedCount: 0,
-                orderIndex
-            };
-        }
-
-        // Unfiltered Any File Type destination (catch-all)
+        const conditions = getActiveConditions(folder)
+            .map(cond => compileCondition(cond, !!folder.filters.caseSensitive))
+            .sort((a, b) => b.score - a.score);
         return {
             folder,
-            destination,
-            score: ANY_FILE_TYPE_SCORE,
-            reason: 'accepts any file type',
-            hasSpecificType: false,
-            matchedCount: 0,
-            orderIndex
+            orderIndex,
+            hasSpecificType,
+            conditions,
+            matchAny: folder.filters && folder.filters.matchMode === 'any',
+            score: hasSpecificType ? MEDIA_TYPE_ONLY_SCORE : ANY_FILE_TYPE_SCORE
         };
+    }
+
+    function evaluateLeafRule(rule, fileInfo) {
+        const { conditions, matchAny } = rule;
+        if (!conditions.length) return { rule, score: rule.score, matchedCount: 0 };
+        const best = matchAny
+            ? conditions.find(condition => condition.matches(fileInfo))
+            : conditions.every(condition => condition.matches(fileInfo)) && conditions[0];
+        return best && { rule, best, score: best.score, matchedCount: matchAny ? 1 : conditions.length };
+    }
+
+    function describeMatch(match, fileInfo) {
+        if (!match.best) {
+            return match.rule.hasSpecificType
+                ? 'type is ' + getMatchTypeName(match.rule.folder.matchType)
+                : 'accepts any file type';
+        }
+        const reason = formatMatchedConditionReason(match.best.condition, fileInfo);
+        if (match.matchedCount === 1) return reason;
+        if (match.matchedCount === 2) {
+            return reason + ' & ' + formatMatchedConditionReason(match.rule.conditions[1].condition, fileInfo);
+        }
+        return reason + ' (+' + (match.matchedCount - 1) + ' more)';
     }
 
     function normalizeConditionForConflict(cond) {
@@ -444,8 +402,7 @@
     }
 
     // --- SORTING RULES ENGINE (LEAF-ONLY SPECIFICITY SCORING) ---
-    function planMoves(items, preset) {
-        const moves = [];
+    function compilePreset(preset) {
         const lockedFolderNames = preset.folders.filter(f => f.untouchable).map(f => f.name.toLowerCase());
         const lockedFolderSet = new Set(lockedFolderNames);
 
@@ -472,43 +429,58 @@
         // Only unlocked leaf bins participate in sorting
         const leafRules = preset.folders
             .map((folder, orderIndex) => ({ folder, orderIndex }))
-            .filter(({ folder }) => !hasChildSet.has(folder.name) && !isFolderLocked(folder));
+            .filter(({ folder }) => !hasChildSet.has(folder.name) && !isFolderLocked(folder))
+            .map(({ folder, orderIndex }) => compileLeafRule(folder, orderIndex));
+        const rulesByType = new Map();
 
-        items.forEach(item => {
-            if (item.isBin) return;
-
-            // Respect locked bins: items already inside a locked bin never move out
-            const parentLower = (item.parentPath || "").toLowerCase();
-            const isInLocked = lockedFolderNames.some(locked => parentLower === locked || parentLower.startsWith(locked + "/"));
-            if (isInLocked) {
-                return;
+        function rulesForItem(item) {
+            const key = item.type + ':' + !!item.isSequence;
+            if (!rulesByType.has(key)) {
+                rulesByType.set(key, leafRules.filter(rule => matchesMediaType(item, rule.folder)));
             }
+            return rulesByType.get(key);
+        }
 
+        return { lockedFolderNames, rulesForItem };
+    }
+
+    function normalizeProjectItems(items) {
+        return items.filter(item => !item.isBin).map(item => {
             const fileInfo = normalizeItemFileInfo(item);
+            fileInfo.lowerStem = fileInfo.stem.toLowerCase();
+            fileInfo.lowerExtension = fileInfo.extension.toLowerCase();
+            return { item, fileInfo, parentLower: (item.parentPath || '').toLowerCase() };
+        });
+    }
 
-            // Evaluate all leaf rules and score each match
-            const candidates = leafRules
-                .map(({ folder, orderIndex }) => evaluateLeafRule(item, fileInfo, folder, orderIndex))
-                .filter(Boolean);
+    function compareMatches(a, b) {
+        return b.score - a.score
+            || Number(b.rule.hasSpecificType) - Number(a.rule.hasSpecificType)
+            || b.matchedCount - a.matchedCount
+            || a.rule.orderIndex - b.rule.orderIndex;
+    }
 
-            if (candidates.length === 0) {
-                // Item matches no rules -> remains untouched where it is
-                return;
+    function planMoves(items, preset) {
+        const moves = [];
+        const { lockedFolderNames, rulesForItem } = preset;
+        items.forEach(({ item, fileInfo, parentLower }) => {
+            if (lockedFolderNames.some(locked => parentLower === locked || parentLower.startsWith(locked + '/'))) return;
+
+            let winningMatch = null;
+            for (const rule of rulesForItem(item)) {
+                const match = evaluateLeafRule(rule, fileInfo);
+                if (match && (!winningMatch || compareMatches(match, winningMatch) < 0)) {
+                    winningMatch = match;
+                }
             }
+            if (!winningMatch) return;
 
-            candidates.sort((a, b) => {
-                if (b.score !== a.score) return b.score - a.score;
-                if (b.hasSpecificType !== a.hasSpecificType) return (b.hasSpecificType ? 1 : 0) - (a.hasSpecificType ? 1 : 0);
-                if (b.matchedCount !== a.matchedCount) return b.matchedCount - a.matchedCount;
-                return a.orderIndex - b.orderIndex;
-            });
-
-            const winningMatch = candidates[0];
-            if (!winningMatch || !winningMatch.destination) {
-                return;
+            const folder = winningMatch.rule.folder;
+            let targetPath = folder.name;
+            if (item.isSequence && folder.subBins && folder.subBins.length > 0) {
+                targetPath += '/' + folder.subBins[0];
             }
-
-            const targetPath = winningMatch.destination;
+            if (!targetPath) return;
 
             // Queue move if target path differs from current parent bin
             if (item.parentPath !== targetPath && item.parentPath !== ("root/" + targetPath)) {
@@ -520,7 +492,7 @@
                     targetPath: targetPath,
                     isLoose: !!item.isLoose,
                     type: item.type,
-                    matchReason: winningMatch.reason,
+                    matchReason: describeMatch(winningMatch, fileInfo),
                     priority: winningMatch.score
                 });
             }
@@ -529,5 +501,5 @@
         return moves;
     }
 
-    Binwright.rules = { MATCHING_RULE_TYPES, getMatchTypeName, FILTER_OPERATORS, FILTER_MATCH_MODES, isWildcardMatchType, FILTER_FUNNEL_SVG, escapeHtml, hasActiveFilters, formatFilterSummary, getRuleConflictSignature, FOLDER_OUTLINE_SVG, FOLDER_FILLED_SVG, getItemIconSvg, planMoves };
+    Binwright.rules = { MATCHING_RULE_TYPES, getMatchTypeName, FILTER_OPERATORS, FILTER_MATCH_MODES, isWildcardMatchType, FILTER_FUNNEL_SVG, escapeHtml, hasActiveFilters, formatFilterSummary, getRuleConflictSignature, FOLDER_OUTLINE_SVG, FOLDER_FILLED_SVG, getItemIconSvg, compilePreset, normalizeProjectItems, planMoves };
 })(window.Binwright = window.Binwright || {});

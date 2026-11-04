@@ -175,6 +175,7 @@ class PresetManager {
     }
 
     savePresets() {
+        this.revision = (this.revision || 0) + 1;
         try {
             localStorage.setItem(this.storageKey, JSON.stringify(this.presets));
         } catch (e) {

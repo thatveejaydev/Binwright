@@ -58,7 +58,7 @@ echo   1. Launch or restart Adobe Premiere Pro.
 echo   2. Open any project.
 echo   3. Go to top menu: Window -^> Extensions -^> Binwright
 echo   4. To debug, open Chrome and navigate to:
-echo      http://localhost:8088
+echo      http://localhost:8128
 echo ===================================================
 echo.
 pause

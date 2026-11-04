@@ -2,7 +2,7 @@
 <ExtensionList>
     <Extension Id="com.binwright.cep.panel">
         <HostList>
-            <Host Name="PPRO" Port="8088" />
+            <Host Name="PPRO" Port="8128" />
         </HostList>
     </Extension>
 </ExtensionList>

@@ -135,11 +135,19 @@
                 ? 'Copy keeps the originals.'
                 : 'Move relocates the original files and relinks selected clips.';
             elements.fileTreeContainer.querySelectorAll('.tree-item').forEach(row => {
-                row.classList.toggle('is-selected', row.querySelector('.file-chk').checked);
+                const checkbox = row.querySelector('.file-chk');
+                checkbox.checked = state.selectedNodeIds.has(row.fileNodeId);
+                row.classList.toggle('is-selected', checkbox.checked);
             });
         }
 
-        function renderFileTree() {
+        let renderedFileView;
+        function renderFileTree(force = false) {
+            if (!force && renderedFileView === state.fileViewMode) {
+                updateFileSelection();
+                return;
+            }
+            renderedFileView = state.fileViewMode;
             elements.fileTreeContainer.innerHTML = '';
             const mediaItems = state.items.filter(i => i.mediaPath && !i.isBin && !i.isSequence);
             if (!state.collapsedFileGroups) state.collapsedFileGroups = new Set();
@@ -185,11 +193,14 @@
                 heading.addEventListener('click', () => {
                     if (state.collapsedFileGroups.has(key)) state.collapsedFileGroups.delete(key);
                     else state.collapsedFileGroups.add(key);
-                    renderFileTree();
+                    const hidden = state.collapsedFileGroups.has(key);
+                    contents.hidden = hidden;
+                    heading.setAttribute('aria-expanded', String(!hidden));
                 });
                 items.forEach(item => {
                     const row = document.createElement('label');
                     row.className = 'tree-item';
+                    row.fileNodeId = item.nodeId;
                     row.title = item.mediaPath;
                     row.innerHTML = `<span class="tree-item-name"><input type="checkbox" class="file-chk" ${state.selectedNodeIds.has(item.nodeId) ? 'checked' : ''}><span class="files-type-icon">${getItemIconSvg(item.type, item.name, '')}</span><span class="files-item-label">${escapeHtml(item.name)}</span></span><span class="files-status ${item.mediaLocation === 'outside' ? 'is-outside' : ''}">${item.mediaLocation === 'trusted' ? 'Trusted' : item.mediaLocation === 'project' ? 'In Project' : 'Outside'}</span><span class="tree-item-size">${formatBytes(item.fileSizeBytes || 0)}</span>`;
                     row.querySelector('input').addEventListener('change', e => {
@@ -250,7 +261,7 @@
                 showToast('Trusted library files can only be copied.');
                 return;
             }
-            const moves = mirrorLayout ? calculateMoves() : [];
+            const destinations = mirrorLayout ? new Map(calculateMoves().map(move => [move.nodeId, move.targetPath])) : null;
             const normalizePath = value => {
                 const normalized = path.resolve(value);
                 return path.sep === '\\' ? normalized.toLowerCase() : normalized;
@@ -271,7 +282,7 @@
                     let message;
 
                     try {
-                        const bin = moves.find(move => move.nodeId === item.nodeId)?.targetPath || item.parentPath || 'Media';
+                        const bin = destinations?.get(item.nodeId) || item.parentPath || 'Media';
                         const targetDir = mirrorLayout ? path.resolve(destDir, bin) : path.resolve(destDir);
                         const relativeDir = path.relative(path.resolve(destDir), targetDir);
                         if (relativeDir === '..' || relativeDir.startsWith('..' + path.sep) || path.isAbsolute(relativeDir)) {
@@ -285,7 +296,7 @@
                         ensureDirectoryExists(targetDir);
                         transfer = await transfers.prepareRelocationTarget(source, requestedTarget, normalizePath);
                         const target = transfer.target;
-                        if (transfer.snapshots) transfers.verifyMediaSnapshots(source, target, transfer.snapshots);
+                        if (transfer.snapshots) await transfers.verifyMediaSnapshots(source, target, transfer.snapshots);
 
                         const result = await transfers.relink(item.nodeId, source, target);
                         if (result !== 'OK') throw new Error(result || 'Premiere returned no relink result.');
@@ -306,8 +317,8 @@
                                 message += ' (original kept because another clip uses it)';
                             } else {
                                 if (transfer.snapshots) {
-                                    transfers.verifyMediaSnapshots(source, target, transfer.snapshots);
-                                    if (normalizePath(fs.realpathSync(source)) === normalizePath(fs.realpathSync(target))) {
+                                    await transfers.verifyMediaSnapshots(source, target, transfer.snapshots);
+                                    if (await transfers.sameMediaFile(source, target, normalizePath)) {
                                         throw new Error('The source and destination now point to the same path.');
                                     }
                                 }
@@ -328,14 +339,14 @@
             } finally {
                 elements.relocateProgressWrap.style.display = 'none';
                 state.relocatingFiles = false;
-                scanProject();
-                renderFileTree();
+                const refreshed = await scanProject();
+                if (!refreshed && linked) updateUIWithState();
             }
         }
 
 
         function bindEvents() {
-            elements.btnRescanFiles.addEventListener('click', () => { scanProject(() => showToast("Project rescanned")); });
+            elements.btnRescanFiles.addEventListener('click', () => { scanProject(ok => { if (ok) showToast("Project rescanned"); }); });
             renderTrustedFolders();
             document.getElementById('btnAddTrustedFolder').addEventListener('click', () => {
                 pickDirectory(folder => {

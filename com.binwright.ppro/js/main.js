@@ -139,12 +139,12 @@
         setCustomParentValue('');
         renderCustomParentMenu();
         setupEventListeners();
-        scanProject();
-
         // Check if CEP host is active or if we're in standalone browser
         if (!window.__adobe_cep__) {
             console.log("Running in standalone preview mode (Simulating Premiere Pro)");
             setupMockProject();
+        } else {
+            scanProject();
         }
     }
 
@@ -212,61 +212,108 @@
 
                 if (targetId === 'tab-sort') {
                     updateSortTabStatus();
+                    checkProjectSnapshot();
                 } else if (targetId === 'tab-media') {
                     renderFileTree();
-                } else if (targetId === 'tab-layout') {
-                    renderLayoutRules();
                 }
             });
         });
     }
 
-    // --- SCAN PROJECT ---
-    function scanProject(onComplete) {
+    // --- PROJECT SNAPSHOT ---
+    let snapshotItems;
+    let scanInFlight;
+    let checkingOnly;
+    let queuedRefresh;
+
+    function checkProjectSnapshot() {
+        if (!state.sortInProgress && !state.relocatingFiles) scanProject(undefined, false, true);
+    }
+
+    function scanProject(onComplete, force = true, checkOnly = false) {
         if (!window.__adobe_cep__) {
-            updateUIWithState();
-            if (onComplete) onComplete();
-            return;
+            if (onComplete) onComplete(true);
+            return Promise.resolve(true);
         }
 
-        bridge.call('getProjectInfo', (res) => {
-            try {
-                const info = JSON.parse(res);
-                if (!info.error) {
-                    state.project = info;
-                    elements.projectPill.textContent = info.name || "Untitled";
-                    elements.projectPill.title = info.path || info.name;
+        if (scanInFlight && !force && !checkOnly && checkingOnly) {
+            return scanInFlight.then(() => scanProject(onComplete, false));
+        }
 
-                    if (info.path && !elements.relocateDestInput.value) {
-                        const projDir = getDirectory(info.path);
-                        elements.relocateDestInput.value = projDir;
-                    }
-                }
-            } catch (e) {
-                console.error("Error reading project info:", e);
+        if (scanInFlight && force) {
+            // A mutation may have happened after the current request reached Premiere.
+            if (!queuedRefresh) {
+                queuedRefresh = scanInFlight.then(() => {
+                    queuedRefresh = null;
+                    return scanProject(undefined, true);
+                });
             }
+            return queuedRefresh.then(ok => { if (onComplete) onComplete(ok); return ok; });
+        }
 
-            bridge.call('getAllProjectItems', (itemsRes) => {
-                try {
-                    state.items = JSON.parse(itemsRes) || [];
-                    updateUIWithState();
-                } catch (e) {
-                    console.error("Error parsing project items:", e);
-                }
-                if (onComplete) onComplete();
-            });
-        });
+        if (!scanInFlight) {
+            checkingOnly = checkOnly;
+            scanInFlight = new Promise(resolve => bridge.call('getProjectSnapshot', resolve, {
+                token: state.snapshotToken,
+                force,
+                checkOnly
+            })).then(res => {
+                const snapshot = JSON.parse(res);
+                if (!snapshot.token) throw new Error('Premiere returned no project snapshot.');
+                if (snapshot.project) applyProjectSnapshot(snapshot);
+                state.snapshotToken = snapshot.token;
+                return true;
+            }).catch(error => {
+                console.error('Could not refresh Premiere project:', error);
+                showToast('Could not refresh the Premiere project.');
+                return false;
+            }).finally(() => { scanInFlight = null; });
+        }
+        return scanInFlight.then(ok => { if (onComplete) onComplete(ok); return ok; });
+    }
+
+    function applyProjectSnapshot(snapshot) {
+        const info = snapshot.project;
+        const projectChanged = info.id !== state.project.id;
+        const itemsChanged = projectChanged || info.path !== state.project.path || snapshot.items !== snapshotItems;
+        const items = itemsChanged ? JSON.parse(snapshot.items) : state.items;
+        if (!Array.isArray(items)) throw new Error('Invalid project items.');
+
+        state.project = info;
+        elements.projectPill.textContent = info.name;
+        elements.projectPill.title = info.path || info.name;
+        if (info.path && !elements.relocateDestInput.value) {
+            elements.relocateDestInput.value = getDirectory(info.path);
+        }
+        if (!itemsChanged) return;
+
+        if (projectChanged) state.selectedNodeIds.clear();
+        else {
+            const itemIds = new Set(items.map(item => item.nodeId));
+            for (const id of state.selectedNodeIds) {
+                if (!itemIds.has(id)) state.selectedNodeIds.delete(id);
+            }
+        }
+        state.items = items;
+        snapshotItems = snapshot.items;
+        sort.invalidateReview();
+        updateUIWithState();
     }
 
     function updateUIWithState() {
+        normalizedItems = null;
+        cachedMoves = null;
         calculateLooseFiles();
-        renderFileTree();
+        renderFileTree(true);
         updateSortTabStatus();
     }
 
     function setupEventListeners() {
-        if (window.__adobe_cep__) bridge.onThemeChange(syncThemeWithPremiere);
-        elements.refreshBtn.addEventListener('click', () => scanProject(() => showToast("Project rescanned")));
+        if (window.__adobe_cep__) {
+            bridge.onThemeChange(syncThemeWithPremiere);
+            window.addEventListener('focus', checkProjectSnapshot);
+        }
+        elements.refreshBtn.addEventListener('click', () => scanProject(ok => { if (ok) showToast("Project rescanned"); }));
         media.bindEvents();
         sort.bindEvents();
         layout.bindEvents();
@@ -378,8 +425,26 @@
         updateUIWithState();
     }
 
-    const { escapeHtml, planMoves, FOLDER_OUTLINE_SVG, getItemIconSvg } = window.Binwright.rules;
-    const calculateMoves = () => planMoves(state.items, window.presetManager.getActivePreset());
+    const { escapeHtml, compilePreset, normalizeProjectItems, planMoves, FOLDER_OUTLINE_SVG, getItemIconSvg } = window.Binwright.rules;
+    let normalizedItems;
+    let cachedMoves;
+    let compiledPreset;
+    let compiledPresetId;
+    let compiledPresetRevision;
+
+    function calculateMoves() {
+        const manager = window.presetManager;
+        const presetId = manager.getActivePresetId();
+        if (compiledPresetId !== presetId || compiledPresetRevision !== manager.revision) {
+            compiledPreset = compilePreset(manager.getActivePreset());
+            compiledPresetId = presetId;
+            compiledPresetRevision = manager.revision;
+            cachedMoves = null;
+        }
+        if (!normalizedItems) normalizedItems = normalizeProjectItems(state.items);
+        if (!cachedMoves) cachedMoves = planMoves(normalizedItems, compiledPreset);
+        return cachedMoves;
+    }
     const transfers = window.Binwright.createTransferService({ fs, path, crypto, bridge });
     const layout = window.Binwright.createLayoutController({
         state, elements, fs, rules: window.Binwright.rules, showToast,
@@ -392,8 +457,7 @@
     } = layout;
     const sort = window.Binwright.createSortController({
         state, elements, bridge, calculateMoves, escapeHtml, getItemIconSvg, scanProject, showToast,
-        updatePresetUIState, renderLayoutRules, updateUIWithState,
-        renderFileTree: () => media.renderFileTree()
+        updatePresetUIState, renderLayoutRules, updateUIWithState
     });
     const { openPreviewModal, updateSortTabStatus } = sort;
     const media = window.Binwright.createMediaController({
