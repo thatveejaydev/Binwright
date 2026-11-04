@@ -244,7 +244,7 @@
             if (state.relocatingFiles) return;
             const destDir = elements.relocateDestInput.value.trim();
             if (!destDir) {
-                alert("Please specify a destination project folder.");
+                window.Binwright.dialog.alert({ title: "Destination Folder Required", message: "Please specify a destination project folder." });
                 return;
             }
             if (!fs || !path || !window.__adobe_cep__) {

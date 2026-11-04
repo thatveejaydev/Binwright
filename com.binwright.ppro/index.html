@@ -34,9 +34,12 @@
 
     <!-- TAB 1: SORT -->
     <main class="tab-content active" id="tab-sort">
-        <!-- Folder Layout Section -->
-        <div class="sort-section">
-            <div class="sort-section-title">Sort Project</div>
+        <!-- Active Layout Section -->
+        <div class="sort-layout-section">
+            <div class="sort-section-header">
+                <span class="sort-section-title">Active Layout</span>
+                <span class="sort-preset-pill" id="sortPresetBadge">0 bins</span>
+            </div>
             <div class="custom-type-select-wrap" id="sortPresetWrap">
                 <button type="button" class="custom-type-trigger sort-preset-trigger" id="sortPresetTrigger" aria-haspopup="listbox" aria-expanded="false">
                     <div class="custom-type-trigger-left">
@@ -51,7 +54,6 @@
                         <span class="custom-type-trigger-title" id="sortPresetTriggerTitle">Default Clean</span>
                     </div>
                     <div class="sort-trigger-right">
-                        <span class="sort-preset-badge" id="sortPresetBadge">6 Bins Configured</span>
                         <span class="custom-type-trigger-chevron">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <polyline points="6 9 12 15 18 9"/>
@@ -64,14 +66,17 @@
                 </div>
                 <select id="sortPresetSelect" style="display: none;"></select>
             </div>
+        </div>
 
+        <!-- Sort Hero Card -->
+        <div class="sort-card">
             <!-- Project Status Banner -->
-            <div class="sort-status-banner" id="sortStatusBanner">
+            <div class="sort-card-status" id="sortStatusBanner">
                 <div class="sort-status-left">
                     <span class="sort-status-dot" id="sortStatusDot"></span>
                     <span class="sort-status-text" id="sortStatusText">Scanning project...</span>
                 </div>
-                <button type="button" class="sort-status-refresh" id="btnRefreshProjectStatus" title="Rescan project">
+                <button type="button" class="sort-status-refresh" id="btnRefreshProjectStatus" title="Rescan project" style="display: none;">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
                         <path d="M3 3v5h5"/>
@@ -80,60 +85,61 @@
                     </svg>
                 </button>
             </div>
-        </div>
 
-        <!-- Primary Sort / Hero Section -->
-        <div class="sort-section">
-            <div class="sort-hero-group">
-                <button class="sort-btn sort-btn-hero" id="btnSortByType">
-                    <svg class="sort-btn-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <line x1="4" y1="6" x2="14" y2="6"></line>
-                        <line x1="4" y1="12" x2="11" y2="12"></line>
-                        <line x1="4" y1="18" x2="8" y2="18"></line>
-                        <polyline points="15 15 18 18 21 15"></polyline>
-                        <line x1="18" y1="9" x2="18" y2="18"></line>
-                    </svg>
-                    <span id="sortActionLabel">Review &amp; Sort items</span>
-                </button>
+            <!-- Action & Option Row -->
+            <div class="sort-card-actions-wrap">
+                <div class="sort-hero-actions">
+                    <button type="button" class="sort-btn sort-btn-rescan" id="btnRescanSort" title="Rescan project" aria-label="Rescan project">
+                        <svg class="sort-btn-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                            <path d="M3 3v5h5"/>
+                            <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+                            <path d="M16 21h5v-5"/>
+                        </svg>
+                    </button>
+                    <button class="sort-btn sort-btn-hero" id="btnSortByType">
+                        <span id="sortActionLabel">Review &amp; Sort items</span>
+                    </button>
+                    <button type="button" class="sort-btn sort-btn-toggle" id="btnToggleSkipReview" title="Skip review modal: OFF (click to sort immediately without review)" aria-label="Toggle skip review modal" aria-pressed="false">
+                        <svg class="sort-btn-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                        </svg>
+                    </button>
+                    <input type="checkbox" id="chkSkipSortReview" style="display: none;">
+                </div>
+            </div>
+
+            <!-- Card Footer (Microcopy + Timing) -->
+            <div class="sort-card-footer">
                 <div class="sort-reassurance">
                     Moves items between project bins. Media stays on disk.
                 </div>
-                <div class="sort-reassurance" id="lastSortTiming" role="status" hidden></div>
+                <div class="sort-timing-badge" id="lastSortTiming" role="status" hidden></div>
             </div>
         </div>
 
-        <div class="sort-divider"></div>
-
-        <!-- Bin Tools Section -->
-        <div class="sort-section">
-            <div class="sort-section-title">Bin Tools</div>
-            <div class="sort-tools-grid">
-                <button class="sort-btn sort-btn-tool" id="btnCreateBins" title="Create empty bin hierarchy from layout">
+        <!-- Bin Utilities Section -->
+        <div class="sort-utilities-section">
+            <div class="sort-section-title">Bin Utilities</div>
+            <div class="sort-utilities-list">
+                <button type="button" class="sort-btn sort-btn-utility sort-btn-tool" id="btnCreateBins" title="Create empty bin hierarchy from layout">
                     <svg class="sort-btn-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-                        <line x1="12" y1="11" x2="12" y2="17"></line>
-                        <line x1="9" y1="14" x2="15" y2="14"></line>
                     </svg>
-                    <span>Create Empty Bins</span>
+                    <span>Create Layout Bins</span>
                 </button>
-                <button class="sort-btn sort-btn-tool" id="btnFlattenBins" title="Remove empty bins. Keeps bins in the active layout.">
+                <button type="button" class="sort-btn sort-btn-utility sort-btn-tool" id="btnFlattenBins" title="Remove empty bins. Keeps bins in the active layout.">
                     <svg class="sort-btn-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="3 6 5 6 21 6"></polyline>
-                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                        <line x1="10" y1="11" x2="10" y2="17"></line>
-                        <line x1="14" y1="11" x2="14" y2="17"></line>
+                        <path d="m19 5-8.5 8.5"></path>
+                        <path d="m11.5 12.5-3.5 3.5c-.8.8-1 2-1 3.5 1.5 0 2.7-.2 3.5-1l3.5-3.5"></path>
+                        <path d="m20 4-1-1a1 1 0 0 0-1.4 0l-1.6 1.6 2.4 2.4L20 5.4a1 1 0 0 0 0-1.4z"></path>
                     </svg>
-                    <span>Remove Empty Bins</span>
+                    <span>Prune Empty Bins</span>
                 </button>
             </div>
-            <button class="sort-btn sort-btn-danger" id="btnDeleteAllBins" title="Move all files to root and delete all bins">
-                <svg class="sort-btn-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-                    <line x1="9.5" y1="11.5" x2="14.5" y2="16.5"></line>
-                    <line x1="14.5" y1="11.5" x2="9.5" y2="16.5"></line>
-                </svg>
-                <span>Delete All Bins (Move to Root)</span>
-            </button>
+            <div class="sort-danger-row">
+                <button type="button" class="sort-link-danger sort-btn-danger" id="btnDeleteAllBins" title="Move all files to root and delete all bins">Move all to root...</button>
+            </div>
         </div>
     </main>
 
@@ -503,8 +509,40 @@
     <!-- Shared Floating Menu for Folder Rule More Options (Rename, Lock, Delete) -->
     <div class="rule-more-floating-menu" id="ruleMoreMenu" role="menu"></div>
 
-    <!-- Toast Notification -->
-    <div class="toast" id="toast">Sorted 16 items.</div>
+    <!-- Custom Modal Dialog (Confirm / Alert / Prompt) -->
+    <div class="modal-dialog-overlay" id="confirmDialogModal" role="dialog" aria-modal="true" aria-labelledby="dialogTitle" hidden>
+        <div class="modal-dialog-card">
+            <div class="modal-dialog-header">
+                <span class="modal-dialog-title" id="dialogTitle">Confirmation</span>
+                <button type="button" class="modal-dialog-close" id="btnDialogClose" title="Close" aria-label="Close">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-dialog-body">
+                <p class="modal-dialog-message" id="dialogMessage"></p>
+                <div class="modal-dialog-input-wrap" id="dialogInputWrap" hidden>
+                    <input type="text" class="modal-dialog-input" id="dialogInput" autocomplete="off" spellcheck="false">
+                </div>
+            </div>
+            <div class="modal-dialog-footer">
+                <button type="button" class="modal-dialog-btn modal-dialog-btn-cancel" id="btnDialogCancel">Cancel</button>
+                <button type="button" class="modal-dialog-btn modal-dialog-btn-confirm" id="btnDialogConfirm">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification (Top Floating Pill) -->
+    <div class="toast" id="toast" role="status" aria-live="polite">
+        <span class="toast-icon">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="20 6 9 17 4 12"/>
+            </svg>
+        </span>
+        <span class="toast-text" id="toastText">Sorted 16 items.</span>
+    </div>
 
     <!-- Hidden input for directory pickers -->
     <input type="file" id="folderPicker" webkitdirectory directory style="display:none;">
@@ -521,6 +559,7 @@
     <script src="js/presets.js"></script>
     <script src="js/rules.js"></script>
     <script src="js/premiere-bridge.js"></script>
+    <script src="js/dialog.js"></script>
     <script src="js/layout-controller.js"></script>
     <script src="js/sort-controller.js"></script>
     <script src="js/media-controller.js"></script>

@@ -53,6 +53,9 @@
         btnSortByType: document.getElementById('btnSortByType'),
         btnFlattenBins: document.getElementById('btnFlattenBins'),
         btnDeleteAllBins: document.getElementById('btnDeleteAllBins'),
+        btnRescanSort: document.getElementById('btnRescanSort'),
+        btnToggleSkipReview: document.getElementById('btnToggleSkipReview'),
+        chkSkipSortReview: document.getElementById('chkSkipSortReview'),
 
         // Layout tab
         layoutPresetSelect: document.getElementById('layoutPresetSelect'),
@@ -339,10 +342,17 @@
     }
 
     // --- UTILITIES ---
+    let toastTimeout = null;
     function showToast(message) {
-        elements.toast.textContent = message;
+        if (!elements.toast) return;
+        const msgEl = elements.toast.querySelector('.toast-text') || elements.toast;
+        msgEl.textContent = message;
         elements.toast.classList.add('show');
-        setTimeout(() => { elements.toast.classList.remove('show'); }, 2400);
+        if (toastTimeout) clearTimeout(toastTimeout);
+        toastTimeout = setTimeout(() => {
+            elements.toast.classList.remove('show');
+        }, 2500);
+
     }
 
     function formatBytes(bytes) {

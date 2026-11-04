@@ -860,11 +860,16 @@
             }
         }
 
-        function renameFolderRule(index) {
+        async function renameFolderRule(index) {
             const preset = window.presetManager.getActivePreset();
             if (!preset || !preset.folders[index]) return;
             const currentName = preset.folders[index].name;
-            const newName = prompt("Rename folder (use / for nested):", currentName);
+            const newName = await window.Binwright.dialog.prompt({
+                title: "Rename Folder Rule",
+                message: "Enter folder name (use / for nested bins):",
+                defaultValue: currentName,
+                placeholder: "e.g. 02 Footage/Raw"
+            });
             if (newName && newName.trim() && newName.trim() !== currentName) {
                 const trimmed = newName.trim();
                 if (state.collapsedFolders && state.collapsedFolders.has(currentName)) {
@@ -900,7 +905,7 @@
             showToast(newLockedState ? `Locked "${folderName.split('/').pop()}"` : `Unlocked "${folderName.split('/').pop()}"`);
         }
 
-        function deleteFolderRule(index) {
+        async function deleteFolderRule(index) {
             const preset = window.presetManager.getActivePreset();
             if (!preset || !preset.folders[index]) return;
             const folderName = preset.folders[index].name;
@@ -911,7 +916,15 @@
                 ? `Remove folder "${folderName}" and all its ${subBinCount} sub-bin(s)?`
                 : `Remove folder rule "${folderName}"?`;
 
-            if (confirm(confirmMsg)) {
+            const confirmed = await window.Binwright.dialog.confirm({
+                title: "Remove Folder Rule",
+                message: confirmMsg,
+                confirmText: "Remove Folder",
+                cancelText: "Cancel",
+                isDanger: true
+            });
+
+            if (confirmed) {
                 invalidateReview();
                 if (state.collapsedFolders) {
                     for (const name of Array.from(state.collapsedFolders)) {
@@ -1681,9 +1694,13 @@
             });
 
             // Rename Preset
-            elements.btnRenamePreset.addEventListener('click', () => {
+            elements.btnRenamePreset.addEventListener('click', async () => {
                 const activePreset = window.presetManager.getActivePreset();
-                const newName = prompt("Rename folder layout:", activePreset.name);
+                const newName = await window.Binwright.dialog.prompt({
+                    title: "Rename Folder Layout",
+                    message: "Enter folder layout name:",
+                    defaultValue: activePreset.name
+                });
                 if (newName && newName.trim() && newName.trim() !== activePreset.name) {
                     window.presetManager.renamePreset(activePreset.id, newName);
                     populatePresetDropdowns();
@@ -1701,8 +1718,12 @@
             });
 
             // New Preset
-            elements.btnNewPreset.addEventListener('click', () => {
-                const name = prompt("Enter name for new layout:", "My Custom Layout");
+            elements.btnNewPreset.addEventListener('click', async () => {
+                const name = await window.Binwright.dialog.prompt({
+                    title: "New Folder Layout",
+                    message: "Enter name for new layout:",
+                    defaultValue: "My Custom Layout"
+                });
                 if (name && name.trim()) {
                     const newPreset = window.presetManager.addPreset(name.trim());
                     populatePresetDropdowns();
@@ -1712,17 +1733,27 @@
             });
 
             // Delete Preset
-            elements.btnDeletePreset.addEventListener('click', () => {
+            elements.btnDeletePreset.addEventListener('click', async () => {
                 const activeId = window.presetManager.getActivePresetId();
                 const activePreset = window.presetManager.getActivePreset();
-                if (confirm(`Delete layout "${activePreset.name}"?`)) {
+                const confirmed = await window.Binwright.dialog.confirm({
+                    title: "Delete Layout Preset",
+                    message: `Are you sure you want to delete layout "${activePreset.name}"?`,
+                    confirmText: "Delete Layout",
+                    cancelText: "Cancel",
+                    isDanger: true
+                });
+                if (confirmed) {
                     if (window.presetManager.deletePreset(activeId)) {
                         if (state.collapsedFolders) state.collapsedFolders.clear();
                         populatePresetDropdowns();
                         renderLayoutRules();
                         showToast("Layout deleted");
                     } else {
-                        alert("Cannot delete the only layout.");
+                        window.Binwright.dialog.alert({
+                            title: "Cannot Delete Layout",
+                            message: "Cannot delete the only layout."
+                        });
                     }
                 }
             });
@@ -1741,7 +1772,7 @@
                     const countText = result.count && result.count > 1 ? ` (${result.count} layouts)` : '';
                     showToast(`Imported layout: ${result.preset.name}${countText}`);
                 } else {
-                    alert(result && result.error ? result.error : "Failed to import preset: Invalid layout format.");
+                    window.Binwright.dialog.alert({ title: "Import Failed", message: result && result.error ? result.error : "Failed to import preset: Invalid layout format." });
                 }
             }
 
@@ -1817,58 +1848,16 @@
                             showToast(`Exported "${activePreset.name}"`);
                         } catch (e) {
                             console.error("Browser download failed:", e);
-                            alert("Export failed: " + e.message);
+                            window.Binwright.dialog.alert({ title: "Export Failed", message: "Export failed: " + e.message });
                         }
                     }
                 });
             }
 
-            // Import Preset
+            // Import Preset (uses native modern File Explorer via presetFileInput)
             if (elements.btnImportPreset) {
                 elements.btnImportPreset.addEventListener('click', () => {
-                    let handledByCep = false;
-                    if (window.cep && window.cep.fs && typeof window.cep.fs.showOpenDialogEx === 'function') {
-                        try {
-                            const openRes = window.cep.fs.showOpenDialogEx(
-                                false,
-                                false,
-                                "Import Layout Preset",
-                                "",
-                                ["json"]
-                            );
-                            if (openRes && openRes.err === 0) {
-                                handledByCep = true;
-                                if (openRes.data && openRes.data.length > 0) {
-                                    const targetPath = openRes.data[0];
-                                    let fileContent = null;
-                                    if (fs && fs.readFileSync) {
-                                        try {
-                                            fileContent = fs.readFileSync(targetPath, 'utf8');
-                                        } catch (e) {
-                                            console.warn("fs.readFileSync failed, trying cep.fs.readFile", e);
-                                        }
-                                    }
-                                    if (fileContent === null && window.cep.fs.readFile) {
-                                        const enc = (window.cep.encoding && window.cep.encoding.UTF8) ? window.cep.encoding.UTF8 : 1;
-                                        const readRes = window.cep.fs.readFile(targetPath, enc);
-                                        if (readRes && readRes.err === 0) {
-                                            fileContent = readRes.data;
-                                        }
-                                    }
-                                    if (fileContent) {
-                                        handleImportedPresetData(fileContent);
-                                    } else {
-                                        showToast("Could not read preset file");
-                                    }
-                                }
-                                return;
-                            }
-                        } catch (cepErr) {
-                            console.warn("CEP open dialog error, falling back to file input:", cepErr);
-                        }
-                    }
-
-                    if (!handledByCep && elements.presetFileInput) {
+                    if (elements.presetFileInput) {
                         elements.presetFileInput.value = '';
                         elements.presetFileInput.click();
                     }
@@ -1879,6 +1868,18 @@
                 elements.presetFileInput.addEventListener('change', (e) => {
                     const file = e.target.files && e.target.files[0];
                     if (!file) return;
+
+                    if (file.path && fs && fs.readFileSync) {
+                        try {
+                            const content = fs.readFileSync(file.path, 'utf8');
+                            handleImportedPresetData(content);
+                            elements.presetFileInput.value = '';
+                            return;
+                        } catch (err) {
+                            console.warn("fs.readFileSync failed on file.path, falling back to FileReader", err);
+                        }
+                    }
+
                     const reader = new FileReader();
                     reader.onload = (event) => {
                         handleImportedPresetData(event.target.result);
@@ -2119,7 +2120,7 @@
             elements.btnSaveNewRule.addEventListener('click', () => {
                 let name = elements.newRuleName.value.trim();
                 if (!name) {
-                    alert("Please enter a folder name.");
+                    window.Binwright.dialog.alert({ title: "Folder Name Required", message: "Please enter a folder name." });
                     return;
                 }
 

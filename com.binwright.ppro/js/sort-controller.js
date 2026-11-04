@@ -2,12 +2,30 @@
     'use strict';
 
     Binwright.createSortController = function ({ state, elements, bridge, calculateMoves, escapeHtml, getItemIconSvg, scanProject, showToast, updatePresetUIState, renderLayoutRules, updateUIWithState }) {
+        let skipReview = localStorage.getItem('binwright_skip_sort_review') === 'true';
+
+        function updateSkipReviewButtonUI() {
+            const btn = elements.btnToggleSkipReview || document.getElementById('btnToggleSkipReview');
+            if (btn) {
+                btn.classList.toggle('is-active', skipReview);
+                btn.setAttribute('aria-pressed', skipReview ? 'true' : 'false');
+                btn.title = skipReview
+                    ? 'Skip review: ON (sorts immediately) — click to enable review modal'
+                    : 'Skip review: OFF (opens review modal) — click to sort immediately';
+            }
+            if (elements.chkSkipSortReview) {
+                elements.chkSkipSortReview.checked = skipReview;
+            }
+        }
+
         function updateSortTabStatus() {
             const dot = document.getElementById('sortStatusDot');
             const text = document.getElementById('sortStatusText');
             const actionLabel = document.getElementById('sortActionLabel');
+            const shouldSkip = skipReview;
             const updateAction = (count) => {
-                if (actionLabel) actionLabel.textContent = `Review & Sort ${count} item${count === 1 ? '' : 's'}`;
+                const prefix = shouldSkip ? 'Sort' : 'Review & Sort';
+                if (actionLabel) actionLabel.textContent = `${prefix} ${count} item${count === 1 ? '' : 's'}`;
                 elements.btnSortByType.disabled = count === 0;
             };
 
@@ -320,8 +338,9 @@
                         refreshMs: Math.round(performance.now() - refreshStarted)
                     };
                     console.info('Binwright sort timing (ms)', timings);
-                    if (result.timings) {
-                        timingStatus.textContent = `Last sort · ${movedCount}/${moves.length} moved · Index ${timings.indexMs} ms · Move ${timings.moveMs} ms · Verify ${timings.verifyMs} ms · Redraw ${timings.redrawMs} ms · Refresh ${timings.refreshMs} ms`;
+                    if (result.timings && timingStatus) {
+                        timingStatus.textContent = `Last sort · ${movedCount}/${moves.length} moved`;
+                        timingStatus.title = `Index: ${timings.indexMs}ms · Move: ${timings.moveMs}ms · Verify: ${timings.verifyMs}ms · Redraw: ${timings.redrawMs}ms · Refresh: ${timings.refreshMs}ms`;
                         timingStatus.hidden = false;
                     }
                 } else {
@@ -333,6 +352,11 @@
                         }
                     });
                     updateUIWithState();
+                    if (timingStatus) {
+                        timingStatus.textContent = `Last sort · ${movedCount}/${moves.length} moved`;
+                        timingStatus.title = 'Simulated sort in browser';
+                        timingStatus.hidden = false;
+                    }
                 }
 
                 if (movedCount > 0) {
@@ -404,10 +428,17 @@
             });
         }
 
-        function deleteAllBins() {
+        async function deleteAllBins() {
             if (state.sortInProgress || state.relocatingFiles) return;
             const confirmMsg = "Are you sure you want to delete all bins?\n\nAll files and sequences will be safely moved to the root level.";
-            if (!confirm(confirmMsg)) {
+            const confirmed = await window.Binwright.dialog.confirm({
+                title: "Delete All Bins",
+                message: confirmMsg,
+                confirmText: "Delete All Bins",
+                cancelText: "Cancel",
+                isDanger: true
+            });
+            if (!confirmed) {
                 return;
             }
 
@@ -458,12 +489,68 @@
             });
 
             elements.btnCreateBins.addEventListener('click', createBins);
+            updateSkipReviewButtonUI();
+
+            const toggleBtn = elements.btnToggleSkipReview || document.getElementById('btnToggleSkipReview');
+            if (toggleBtn) {
+                toggleBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    skipReview = !skipReview;
+                    try {
+                        localStorage.setItem('binwright_skip_sort_review', skipReview ? 'true' : 'false');
+                    } catch (err) {}
+                    updateSkipReviewButtonUI();
+                    updateSortTabStatus();
+                    showToast(skipReview ? "Skip review enabled (sorts immediately)" : "Review modal enabled");
+                });
+            }
+
+            if (elements.chkSkipSortReview) {
+                elements.chkSkipSortReview.checked = skipReview;
+                elements.chkSkipSortReview.addEventListener('change', () => {
+                    skipReview = elements.chkSkipSortReview.checked;
+                    try {
+                        localStorage.setItem('binwright_skip_sort_review', skipReview ? 'true' : 'false');
+                    } catch (err) {}
+                    updateSkipReviewButtonUI();
+                    updateSortTabStatus();
+                });
+            }
+
             elements.btnSortByType.addEventListener('click', () => {
-                scanProject(ok => { if (ok) openPreviewModal(); }, false);
+                scanProject(ok => {
+                    if (!ok) return;
+                    const moves = calculateMoves();
+                    if (skipReview) {
+                        if (moves.length > 0) {
+                            executeSort(moves);
+                        } else {
+                            showToast("All items are already organized into clean bins.");
+                        }
+                    } else {
+                        openPreviewModal();
+                    }
+                }, false);
             });
             elements.btnFlattenBins.addEventListener('click', flattenEmptyBins);
             if (elements.btnDeleteAllBins) {
                 elements.btnDeleteAllBins.addEventListener('click', deleteAllBins);
+            }
+
+            if (elements.btnRescanSort) {
+                elements.btnRescanSort.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (state.sortInProgress || state.relocatingFiles) return;
+                    elements.btnRescanSort.classList.add('is-spinning');
+                    elements.btnRescanSort.disabled = true;
+                    scanProject(ok => {
+                        setTimeout(() => {
+                            elements.btnRescanSort.classList.remove('is-spinning');
+                            elements.btnRescanSort.disabled = false;
+                        }, 400);
+                        if (ok) showToast("Project rescanned");
+                    }, true);
+                });
             }
 
             const btnRefreshStatus = document.getElementById('btnRefreshProjectStatus');
