@@ -3,10 +3,17 @@
 
     Binwright.createSortController = function ({ state, elements, bridge, calculateMoves, escapeHtml, getItemIconSvg, scanProject, showToast, updatePresetUIState, renderLayoutRules, updateUIWithState }) {
         let skipReview = localStorage.getItem('binwright_skip_sort_review') === 'true';
+        let autoSortEnabled = localStorage.getItem('binwright_auto_sort_on_import') === 'true';
         let lastSortInverseMoves = null;
+        const knownNodeIds = new Set();
+        const recentlyUndoneNodeIds = new Set();
+        let initialScanCompleted = false;
 
         function clearUndoState() {
             lastSortInverseMoves = null;
+            recentlyUndoneNodeIds.clear();
+            knownNodeIds.clear();
+            initialScanCompleted = false;
             const timingStatus = document.getElementById('lastSortTiming');
             if (timingStatus) {
                 timingStatus.hidden = true;
@@ -283,6 +290,38 @@
             });
         }
 
+        function syncAutoSortUI() {
+            const chk = elements.chkAutoSort || document.getElementById('chkAutoSort');
+            const badge = elements.autoSortBadge || document.getElementById('autoSortBadge');
+            if (chk) chk.checked = autoSortEnabled;
+            if (badge) {
+                badge.style.display = autoSortEnabled ? 'inline-flex' : 'none';
+            }
+        }
+
+        async function runAutoSort(operation) {
+            if (state.sortInProgress || state.relocatingFiles) return;
+            state.sortInProgress = true;
+            const badge = elements.autoSortBadge || document.getElementById('autoSortBadge');
+            if (badge) {
+                badge.classList.add('is-sorting');
+                const textSpan = badge.querySelector('span:not(.sort-auto-pulse-dot)');
+                if (textSpan) textSpan.textContent = 'Sorting…';
+            }
+            try {
+                await operation();
+            } catch (error) {
+                console.error('Auto-sort operation failed:', error);
+            } finally {
+                state.sortInProgress = false;
+                if (badge) {
+                    badge.classList.remove('is-sorting');
+                    const textSpan = badge.querySelector('span:not(.sort-auto-pulse-dot)');
+                    if (textSpan) textSpan.textContent = 'Listening';
+                }
+            }
+        }
+
         // --- SORT EXECUTION ---
         const sortLoading = document.getElementById('sortLoading');
 
@@ -297,17 +336,22 @@
 
             const previousFocus = document.activeElement;
             state.sortInProgress = true;
-            sortLoading.querySelector('.sort-loading-content span:last-child').textContent = label + '…';
-            sortLoading.hidden = false;
-            sortLoading.focus();
+            if (sortLoading) {
+                const lbl = sortLoading.querySelector('.sort-loading-content span:last-child');
+                if (lbl) lbl.textContent = label + '…';
+                sortLoading.hidden = false;
+                if (typeof sortLoading.focus === 'function') sortLoading.focus();
+            }
 
             try {
                 await new Promise(resolve => {
-                    const timer = setTimeout(resolve, 100);
-                    window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
-                        clearTimeout(timer);
-                        resolve();
-                    }));
+                    const timer = setTimeout(resolve, 80);
+                    if (typeof window.requestAnimationFrame === 'function') {
+                        window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+                            clearTimeout(timer);
+                            resolve();
+                        }));
+                    }
                 });
                 await operation();
             } catch (error) {
@@ -320,7 +364,7 @@
             }
         }
 
-        function executeSort(moves, isUndo = false) {
+        function executeSort(moves, isUndo = false, isAutoSort = false) {
             const token = state.snapshotToken;
             const inverseMoves = (moves || []).map(m => {
                 let prevPath = m.originPath || m.currentParentPath || "root";
@@ -335,7 +379,11 @@
                 };
             });
 
-            return runWithSortOverlay(isUndo ? 'Reverting sort' : 'Sorting project', async () => {
+            const runner = isAutoSort
+                ? (op) => runAutoSort(op)
+                : (op) => runWithSortOverlay(isUndo ? 'Reverting sort' : 'Sorting project', op);
+
+            return runner(async () => {
                 invalidateReview();
 
                 const timingStatus = document.getElementById('lastSortTiming');
@@ -439,10 +487,14 @@
                 if (!isUndo) {
                     if (movedCount > 0) {
                         lastSortInverseMoves = successfulInverseMoves;
-                        showToast(`Sorted ${movedCount} item${movedCount === 1 ? '' : 's'}. (Ctrl+Z to undo)`);
+                        if (isAutoSort) {
+                            showToast(`⚡ Auto-sorted ${movedCount} imported item${movedCount === 1 ? '' : 's'}.`);
+                        } else {
+                            showToast(`Sorted ${movedCount} item${movedCount === 1 ? '' : 's'}. (Ctrl+Z to undo)`);
+                        }
                     } else {
                         lastSortInverseMoves = null;
-                        showToast("No items were moved.");
+                        if (!isAutoSort) showToast("No items were moved.");
                     }
                 } else {
                     lastSortInverseMoves = null;
@@ -462,6 +514,11 @@
                 return;
             }
             const movesToRevert = [...lastSortInverseMoves];
+            movesToRevert.forEach(m => {
+                if (m && m.nodeId !== undefined) {
+                    recentlyUndoneNodeIds.add(String(m.nodeId));
+                }
+            });
             return executeSort(movesToRevert, true);
         }
 
@@ -576,6 +633,42 @@
             });
         }
 
+        function checkAutoSort(items) {
+            if (!items || !Array.isArray(items) || items.length === 0) return;
+
+            // Initial scan of an opened project: index existing items so we never auto-sort pre-existing media on startup
+            if (!initialScanCompleted) {
+                items.forEach(it => {
+                    if (it && it.nodeId !== undefined && it.nodeId !== null) {
+                        knownNodeIds.add(String(it.nodeId));
+                    }
+                });
+                initialScanCompleted = true;
+                return;
+            }
+
+            // If auto-sort is off or sort is running, do nothing
+            if (!autoSortEnabled || state.sortInProgress || state.relocatingFiles) return;
+
+            // Check which loose items at root have matching destinations in the active layout
+            const allMoves = calculateMoves();
+            if (!allMoves || allMoves.length === 0) return;
+
+            const autoMoves = allMoves.filter(m => {
+                if (!m || m.nodeId === undefined || m.nodeId === null) return false;
+                const idStr = String(m.nodeId);
+                if (recentlyUndoneNodeIds.has(idStr)) return false;
+                if (knownNodeIds.has(idStr)) return false;
+                const origin = m.originPath || "";
+                return origin === "root" || origin === "" || origin === "Project root" || origin === "Project Root";
+            });
+
+            if (autoMoves.length > 0) {
+                console.info(`[Binwright] Auto-sorting ${autoMoves.length} imported items...`);
+                executeSort(autoMoves, false, true);
+            }
+        }
+
         function bindEvents() {
             ['keydown', 'keyup', 'click', 'dblclick', 'contextmenu', 'submit', 'dragstart', 'drop'].forEach(type => {
                 document.addEventListener(type, blockSortInput, true);
@@ -614,6 +707,28 @@
                     } catch (err) {}
                     updateSkipReviewButtonUI();
                     updateSortTabStatus();
+                });
+            }
+
+            // Auto-sort on import toggle
+            const chkAutoSort = elements.chkAutoSort || document.getElementById('chkAutoSort');
+            if (chkAutoSort) {
+                chkAutoSort.checked = autoSortEnabled;
+                syncAutoSortUI();
+                chkAutoSort.addEventListener('change', (e) => {
+                    autoSortEnabled = !!e.target.checked;
+                    try {
+                        localStorage.setItem('binwright_auto_sort_on_import', String(autoSortEnabled));
+                    } catch (err) {}
+                    syncAutoSortUI();
+                    if (autoSortEnabled) {
+                        knownNodeIds.clear();
+                        recentlyUndoneNodeIds.clear();
+                        showToast("Auto-sort on import enabled");
+                        checkAutoSort(state.items);
+                    } else {
+                        showToast("Auto-sort on import disabled");
+                    }
                 });
             }
 
@@ -688,7 +803,7 @@
             });
         }
 
-        return { bindEvents, openPreviewModal, updateSortTabStatus, invalidateReview, undoSort, clearUndoState };
+        return { bindEvents, openPreviewModal, updateSortTabStatus, invalidateReview, undoSort, clearUndoState, checkAutoSort, isAutoSortEnabled: () => autoSortEnabled };
     };
 
     

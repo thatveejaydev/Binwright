@@ -56,6 +56,8 @@
         btnRescanSort: document.getElementById('btnRescanSort'),
         btnToggleSkipReview: document.getElementById('btnToggleSkipReview'),
         chkSkipSortReview: document.getElementById('chkSkipSortReview'),
+        chkAutoSort: document.getElementById('chkAutoSort'),
+        autoSortBadge: document.getElementById('autoSortBadge'),
 
         // Layout tab
         layoutPresetSelect: document.getElementById('layoutPresetSelect'),
@@ -267,8 +269,8 @@
             })).then(res => {
                 const snapshot = JSON.parse(res);
                 if (!snapshot.token) throw new Error('Premiere returned no project snapshot.');
-                if (snapshot.project) applyProjectSnapshot(snapshot);
                 state.snapshotToken = snapshot.token;
+                if (snapshot.project) applyProjectSnapshot(snapshot);
                 return true;
             }).catch(error => {
                 console.error('Could not refresh Premiere project:', error);
@@ -310,6 +312,9 @@
         snapshotItems = snapshot.items;
         sort.invalidateReview();
         updateUIWithState();
+        if (sort && typeof sort.checkAutoSort === 'function') {
+            sort.checkAutoSort(state.items);
+        }
     }
 
     function updateUIWithState() {
@@ -331,6 +336,21 @@
         media.bindEvents();
         sort.bindEvents();
         layout.bindEvents();
+        setupAutoSortHeartbeat();
+    }
+
+    let autoSortHeartbeatTimer = null;
+    function setupAutoSortHeartbeat() {
+        if (autoSortHeartbeatTimer && typeof window.clearInterval === 'function') {
+            window.clearInterval(autoSortHeartbeatTimer);
+        }
+        if (typeof window.setInterval === 'function') {
+            autoSortHeartbeatTimer = window.setInterval(() => {
+                if (sort && typeof sort.isAutoSortEnabled === 'function' && !sort.isAutoSortEnabled()) return;
+                if (state.sortInProgress || state.relocatingFiles) return;
+                checkProjectSnapshot();
+            }, 1500);
+        }
     }
 
     // --- DIRECTORY PICKER HELPER ---
