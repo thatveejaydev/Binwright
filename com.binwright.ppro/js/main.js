@@ -50,6 +50,7 @@
         // Sort tab
         sortPresetSelect: document.getElementById('sortPresetSelect'),
         btnCreateBins: document.getElementById('btnCreateBins'),
+        btnFindDuplicates: document.getElementById('btnFindDuplicates'),
         btnSortByType: document.getElementById('btnSortByType'),
         btnFlattenBins: document.getElementById('btnFlattenBins'),
         btnDeleteAllBins: document.getElementById('btnDeleteAllBins'),
@@ -497,7 +498,7 @@
         renderCustomTypeMenu, setCustomParentValue, renderCustomParentMenu
     } = layout;
     const sort = window.Binwright.createSortController({
-        state, elements, bridge, calculateMoves, escapeHtml, getItemIconSvg, scanProject, showToast,
+        state, elements, bridge, path, calculateMoves, escapeHtml, getItemIconSvg, scanProject, showToast,
         updatePresetUIState, renderLayoutRules, updateUIWithState
     });
     const { openPreviewModal, updateSortTabStatus } = sort;

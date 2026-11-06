@@ -1,7 +1,7 @@
 (function (Binwright) {
     'use strict';
 
-    Binwright.createSortController = function ({ state, elements, bridge, calculateMoves, escapeHtml, getItemIconSvg, scanProject, showToast, updatePresetUIState, renderLayoutRules, updateUIWithState }) {
+    Binwright.createSortController = function ({ state, elements, bridge, path, calculateMoves, escapeHtml, getItemIconSvg, scanProject, showToast, updatePresetUIState, renderLayoutRules, updateUIWithState }) {
         let skipReview = localStorage.getItem('binwright_skip_sort_review') === 'true';
         let autoSortEnabled = localStorage.getItem('binwright_auto_sort_on_import') === 'true';
         let lastSortInverseMoves = null;
@@ -524,16 +524,16 @@
 
         // --- CREATE BINS & FLATTEN BINS ---
         function createBins() {
-            const preset = window.presetManager.getActivePreset();
-            invalidateReview();
-            if (window.__adobe_cep__) {
-                bridge.call('createLayoutBins', () => {
-                    showToast("Created bin hierarchy.");
-                    scanProject();
-                }, preset);
-            } else {
+            return runWithSortOverlay('Creating layout bins', async () => {
+                const preset = window.presetManager.getActivePreset();
+                invalidateReview();
+                if (window.__adobe_cep__) {
+                    const result = await new Promise(resolve => bridge.call('createLayoutBins', resolve, preset));
+                    if (result !== 'OK') throw new Error(result || 'Premiere returned no result.');
+                    if (!await scanProject()) return;
+                }
                 showToast("Created bin hierarchy.");
-            }
+            });
         }
 
         function flattenEmptyBins() {
@@ -669,6 +669,78 @@
             }
         }
 
+        async function findDuplicates() {
+            let message;
+            let content;
+            await runWithSortOverlay('Finding duplicates', async () => {
+                if (!await scanProject()) return;
+                if (!state.isSimulated && !state.project.id) {
+                    message = 'Open a Premiere project to look for duplicates.';
+                    return;
+                }
+
+                const itemsBySource = new Map();
+                for (const item of state.items) {
+                    if (item.isBin || item.isSequence || !item.mediaPath) continue;
+                    const source = path && path.sep === '\\'
+                        ? path.normalize(item.mediaPath).toLowerCase()
+                        : item.mediaPath;
+                    if (!itemsBySource.has(source)) itemsBySource.set(source, []);
+                    itemsBySource.get(source).push(item);
+                }
+
+                const groups = Array.from(itemsBySource.values()).filter(items => items.length > 1);
+                if (!groups.length) {
+                    message = 'No project items share the same source path.';
+                    return;
+                }
+
+                const groupLabel = groups.length === 1 ? '1 source file has' : groups.length + ' source files have';
+                content = document.createElement('div');
+                content.className = 'duplicate-results';
+                content.innerHTML = `
+                    <p>${groupLabel} multiple entries in the Project panel.</p>
+                    <div class="duplicate-instructions">
+                        <span>Consolidate manually in Premiere</span>
+                        <strong>Edit → Consolidate Duplicates</strong>
+                        <span>Applies to the entire project.</span>
+                    </div>
+                `;
+                const list = document.createElement('ul');
+                list.className = 'duplicate-list';
+                for (const items of groups) {
+                    const source = items[0].mediaPath;
+                    const filename = source.split(/[\\/]/).pop();
+                    const locations = new Map();
+                    for (const item of items) {
+                        const bin = item.parentPath === 'root' ? 'Project root' : item.parentPath;
+                        const label = item.name === filename ? bin : item.name + ' in ' + bin;
+                        locations.set(label, (locations.get(label) || 0) + 1);
+                    }
+                    const group = document.createElement('li');
+                    group.innerHTML = `
+                        <div class="duplicate-file">
+                            <strong>${escapeHtml(filename)}</strong>
+                            <span>${items.length} entries</span>
+                        </div>
+                        <div class="duplicate-path">${escapeHtml(source)}</div>
+                        <ul class="duplicate-locations"></ul>
+                    `;
+                    const locationList = group.querySelector('.duplicate-locations');
+                    locations.forEach((count, label) => {
+                        const entry = document.createElement('li');
+                        entry.textContent = count > 1 ? label + ' ×' + count : label;
+                        locationList.appendChild(entry);
+                    });
+                    list.appendChild(group);
+                }
+                content.appendChild(list);
+            });
+            if (message || content) {
+                await Binwright.dialog.alert({ title: 'Duplicate Media', message, content, buttonText: 'Done' });
+            }
+        }
+
         function bindEvents() {
             ['keydown', 'keyup', 'click', 'dblclick', 'contextmenu', 'submit', 'dragstart', 'drop'].forEach(type => {
                 document.addEventListener(type, blockSortInput, true);
@@ -682,6 +754,7 @@
             });
 
             elements.btnCreateBins.addEventListener('click', createBins);
+            elements.btnFindDuplicates.addEventListener('click', findDuplicates);
             updateSkipReviewButtonUI();
 
             const toggleBtn = elements.btnToggleSkipReview || document.getElementById('btnToggleSkipReview');

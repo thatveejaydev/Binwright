@@ -120,9 +120,9 @@
             </div>
         </div>
 
-        <!-- Bin Utilities Section -->
+        <!-- Utilities Section -->
         <div class="sort-utilities-section">
-            <div class="sort-section-title">Bin Utilities</div>
+            <div class="sort-section-title">Utilities</div>
             <div class="sort-utilities-list">
                 <button type="button" class="sort-btn sort-btn-utility sort-btn-tool" id="btnCreateBins" title="Create empty bin hierarchy from layout">
                     <svg class="sort-btn-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -137,6 +137,13 @@
                         <path d="m20 4-1-1a1 1 0 0 0-1.4 0l-1.6 1.6 2.4 2.4L20 5.4a1 1 0 0 0 0-1.4z"></path>
                     </svg>
                     <span>Prune Empty Bins</span>
+                </button>
+                <button type="button" class="sort-btn sort-btn-utility sort-btn-tool" id="btnFindDuplicates" title="Find project items that reference the same source file">
+                    <svg class="sort-btn-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="10" cy="10" r="6"></circle>
+                        <path d="m14.5 14.5 5 5"></path>
+                    </svg>
+                    <span>Find Duplicates</span>
                 </button>
             </div>
             <div class="sort-danger-row">
@@ -528,7 +535,7 @@
                 </button>
             </div>
             <div class="modal-dialog-body">
-                <p class="modal-dialog-message" id="dialogMessage"></p>
+                <div class="modal-dialog-message" id="dialogMessage"></div>
                 <div class="modal-dialog-input-wrap" id="dialogInputWrap" hidden>
                     <input type="text" class="modal-dialog-input" id="dialogInput" autocomplete="off" spellcheck="false">
                 </div>

@@ -69,11 +69,12 @@
     function alert({
         title = "Notice",
         message = "",
+        content = null,
         buttonText = "OK"
     } = {}) {
         const els = getElements();
         if (!els.overlay) {
-            window.alert(message);
+            window.alert(content ? content.textContent : message);
             return Promise.resolve();
         }
 
@@ -84,7 +85,8 @@
 
             els.title.textContent = title;
             els.message.textContent = message;
-            els.message.hidden = !message;
+            if (content) els.message.appendChild(content);
+            els.message.hidden = !message && !content;
             els.inputWrap.hidden = true;
             els.input.value = "";
 
